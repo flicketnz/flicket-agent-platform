@@ -1,10 +1,8 @@
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { ConversationSession } from "src/common/types/conversation-session.type";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type ConversationSession,
-  LlmConversationQuery,
-} from "../llm-conversation.query";
+import { LlmConversationQuery } from "../llm-conversation.query";
 
 describe("LlmConversationQuery", () => {
   const mockSession: ConversationSession = {

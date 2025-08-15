@@ -11,7 +11,7 @@ import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DiscoveryService } from "@nestjs/core";
-import { ConversationSession } from "src/common/queries/llm-conversation.query";
+import { ConversationSession } from "src/common/types/conversation-session.type";
 
 import {
   type CheckpointerPort,

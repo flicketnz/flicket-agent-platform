@@ -1,18 +1,7 @@
 import { BaseMessage } from "@langchain/core/messages";
 import { Query } from "@nestjs/cqrs";
 
-/**
- * Session context for maintaining conversation state
- */
-export interface ConversationSession {
-  sessionId: string;
-  userId?: string;
-  channelId?: string;
-  threadId?: string;
-  startedAt: Date;
-  lastActivity: Date;
-  metadata?: Record<string, any>;
-}
+import { ConversationSession } from "../types/conversation-session.type";
 
 /**
  * Progress callback for real-time response streaming

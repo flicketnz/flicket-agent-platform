@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule, ConfigService } from "@nestjs/config";
+import { ConfigModule, ConfigType } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
 import { SlackModule } from "nestjs-slack-bolt";
 import { SlackModuleOptions } from "nestjs-slack-bolt/dist/interfaces/modules/module.options";
@@ -12,26 +12,29 @@ import { SlackReceiverController } from "./slack-receiver.controller";
   imports: [
     ConfigModule.forFeature(slackConfig),
     SlackModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService, ModuleRef],
-      useFactory: (configService: ConfigService) => {
+      imports: [ConfigModule.forFeature(slackConfig)],
+      inject: [slackConfig.KEY, ModuleRef],
+      useFactory: (config: ConfigType<typeof slackConfig>) => {
+        const receiver = config.socketMode
+          ? undefined
+          : {
+              init: () => {},
+
+              start: (...args: any[]) => {
+                return Promise.resolve();
+              },
+              stop: (...args: any[]) => {
+                return Promise.resolve();
+              },
+            };
         return {
-          appToken: configService.get<string>("slack.appToken"),
-          socketMode: configService.get<boolean>("slack.socketMode"),
-          signingSecret: configService.get<string>("slack.signingSecret"),
-          token: configService.get<string>("slack.botToken"),
+          appToken: config.appToken,
+          socketMode: config.socketMode,
+          signingSecret: config.signingSecret,
+          token: config.botToken,
           logLevel: "debug" as SlackModuleOptions["logLevel"],
           tokenVerificationEnabled: false,
-          receiver: {
-            init: () => {},
-
-            start: (...args: any[]) => {
-              return Promise.resolve();
-            },
-            stop: (...args: any[]) => {
-              return Promise.resolve();
-            },
-          },
+          receiver,
         };
       },
     }),
