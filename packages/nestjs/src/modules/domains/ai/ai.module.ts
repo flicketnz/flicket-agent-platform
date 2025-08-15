@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 
-import { AiAgentsModule } from "./modules/agents/agents.module";
+import { AgentsModule } from "./modules/agents/agents.module";
 import { LlmModule } from "./modules/llm/llm.module";
 import { LlmStorageModule } from "./modules/llm-storage/llm-storage.module";
 import { ModelProviderModule } from "./modules/model-providers/model-provider.module";
@@ -8,11 +8,12 @@ import { AiToolsModule } from "./modules/tools/tools.module";
 
 @Module({
   imports: [
+    LlmStorageModule,
+    AgentsModule,
+    AiToolsModule,
     ModelProviderModule,
     LlmModule,
-    AiToolsModule,
-    LlmStorageModule,
-    AiAgentsModule,
   ],
+  exports: [],
 })
-export class AIModule {}
+export class AiModule {}

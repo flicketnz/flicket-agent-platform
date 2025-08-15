@@ -1,3 +1,4 @@
+import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -9,6 +10,8 @@ async function bootstrap() {
     logger: ["debug", "verbose", "log", "warn"],
     rawBody: true,
   });
+
+  app.useGlobalPipes(new ValidationPipe());
 
   // GET port from config
   const config = app.get(ConfigService);

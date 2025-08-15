@@ -4,7 +4,7 @@ import { ConfigModule, ConfigType } from "@nestjs/config";
 import { DynamooseModule } from "nestjs-dynamoose";
 
 import awsConfig from "../config-management/configs/aws.config";
-import { AIModule } from "./ai/ai.module";
+import { AiModule } from "./ai/ai.module";
 
 @Module({
   imports: [
@@ -42,7 +42,7 @@ import { AIModule } from "./ai/ai.module";
         };
       },
     }),
-    AIModule,
+    AiModule,
   ],
 })
 export class DomainsModule {}
