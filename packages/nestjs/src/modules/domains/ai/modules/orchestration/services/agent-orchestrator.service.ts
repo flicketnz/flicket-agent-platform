@@ -4,18 +4,18 @@ import {
   SystemMessage,
 } from "@langchain/core/messages";
 import { Injectable, Logger } from "@nestjs/common";
+import { normalizeMessage } from "src/common/utils/message.utils";
 
-import {
-  InjectPrimaryChatModel,
-  type PrimaryChatModelPort,
-} from "../../model-providers/ports/primary-model.port";
-import { normalizeMessage } from "../agent.utils";
 import {
   AgentHealthResult,
   AgentInvocationInput,
   AgentInvocationResult,
-} from "../ports/agent.port";
-import { AgentRegistryService } from "./agent-registry.service";
+  AgentRegistryService,
+} from "../../agents";
+import {
+  InjectPrimaryChatModel,
+  type PrimaryChatModelPort,
+} from "../../model-providers";
 
 /**
  * Strategy for orchestrating agent selection and invocation

@@ -7,9 +7,9 @@ import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { type ConfigType } from "@nestjs/config";
 import { firstValueFrom, timeout } from "rxjs";
+import { normalizeMessage } from "src/common/utils/message.utils";
 import agentSnowflakeCortexConfig from "src/modules/config-management/configs/agent-snowflake-cortex.config";
 
-import { normalizeMessage } from "../agent.utils";
 import { Agent } from "../decorators/agent.decorator";
 import {
   AgentHealthResult,
