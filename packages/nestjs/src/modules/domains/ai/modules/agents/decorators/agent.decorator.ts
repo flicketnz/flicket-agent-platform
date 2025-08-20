@@ -10,12 +10,12 @@ export interface AgentMetadata {
   agentId: string;
   /** List of capabilities this agent provides */
   capabilities: string[];
-  /** Whether this is a primary agent for its capabilities */
-  isPrimary?: boolean;
-  /** Priority level for agent selection (higher = more priority) */
-  priority?: number;
-  /** Human-readable description of the agent */
+  /** Description of what this agent does */
   description?: string;
+  /** Whether this agent is the primary/default agent */
+  isPrimary?: boolean;
+  /** Priority level for agent selection (higher number = higher priority) */
+  priority?: number;
 }
 
 /**

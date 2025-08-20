@@ -1,6 +1,10 @@
 import * as Joi from "joi";
 
 export const slackValidationSchema = Joi.object({
+  SLACK_LOG_LEVEL: Joi.string()
+    .valid("debug", "info", "warn", "error")
+    .optional()
+    .default("info"),
   SLACK_BOT_TOKEN: Joi.string().required(),
   SLACK_SIGNING_SECRET: Joi.any().when("SLACK_SOCKET_MODE", {
     is: false,

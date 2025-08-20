@@ -13,7 +13,9 @@ export class SearxngTool implements AiToolProvider, OnModuleInit {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    const enabled = this.configService.get<string>("llm.tools.searxng.enabled");
+    const enabled = this.configService.get<boolean>(
+      "llm.tools.searxng.enabled",
+    );
     if (enabled) {
       this.tool = new SearxngSearch({
         apiBase: this.configService.get<string>("llm.tools.searxng.apiBase"),

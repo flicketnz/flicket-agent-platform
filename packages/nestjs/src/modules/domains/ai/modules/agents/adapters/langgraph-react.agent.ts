@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { ChatMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StructuredToolInterface } from "@langchain/core/tools";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import { Annotation } from "@langchain/langgraph";
+import {
+  createReactAgent,
+  createReactAgentAnnotation,
+} from "@langchain/langgraph/prebuilt";
+import { Injectable, Logger } from "@nestjs/common";
 import { DiscoveryService } from "@nestjs/core";
 
 import {
@@ -19,39 +21,39 @@ import {
 } from "../../model-providers/ports/primary-model.port";
 import { AiToolProvider, Tool } from "../../tools/ai-tools";
 import { Agent } from "../decorators/agent.decorator";
-import {
-  AgentHealthResult,
-  AgentInvocationInput,
-  AgentInvocationResult,
-  AgentPort,
-} from "../ports/agent.port";
+import { GraphAgentPort } from "../ports/graph-agent.port";
 
 @Agent({
   agentId: "langgraph-react",
   capabilities: ["general-reasoning", "tool-usage", "conversation"],
   isPrimary: true,
-  priority: 100,
-  description: "Primary LangGraph React agent with tool capabilities",
 })
 @Injectable()
-export class LangGraphReactAgentAdapter implements AgentPort, OnModuleInit {
+export class LangGraphReactAgentAdapter extends GraphAgentPort {
   private readonly logger = new Logger(LangGraphReactAgentAdapter.name);
-  private defaultTools: StructuredToolInterface[] = [];
+  private defaultTools: StructuredToolInterface[] | undefined;
   private prompts: {
     systemPrompt: string;
   };
 
   readonly agentId = "langgraph-react";
-  readonly agentName = "LangGraph React Agent";
-  readonly description = "Primary LangGraph React agent with tool capabilities";
-  readonly version = "1.0.0";
+  protected graph: ReturnType<typeof createReactAgent> | undefined;
+
+  public readonly stateDefinition = Annotation.Root({
+    // ...MessagesAnnotation.spec,
+    ...createReactAgentAnnotation().spec,
+    humanName: Annotation<string>(),
+    currentDateIso: Annotation<string>(),
+    currentTimezone: Annotation<string>(),
+    systemPrompt: Annotation<string>(),
+  });
 
   constructor(
-    private readonly configService: ConfigService,
     @InjectPrimaryChatModel() private primaryChatModel: PrimaryChatModelPort,
     private discoveryService: DiscoveryService,
     @InjectCheckpointer() private checkpointerAdapter: CheckpointerPort,
   ) {
+    super();
     this.prompts = {
       systemPrompt: readFileSync(
         resolve("dist", "prompts", "system.prompt.txt"),
@@ -60,8 +62,11 @@ export class LangGraphReactAgentAdapter implements AgentPort, OnModuleInit {
     };
   }
 
-  onModuleInit() {
-    // Discover and register tools (moved from LlmService.onApplicationBootstrap)
+  private getTools() {
+    if (this.defaultTools) {
+      return this.defaultTools;
+    }
+    // Discover and register tools
     // TODO: refine this to only get tools providers that are in scope of this module. currently gets providers from across the system
     const toolsAndToolkits = this.discoveryService
       .getProviders({ metadataKey: Tool.KEY })
@@ -82,180 +87,41 @@ export class LangGraphReactAgentAdapter implements AgentPort, OnModuleInit {
       [],
     );
     // add tools
-    this.defaultTools.push(...tools);
+    this.defaultTools = tools;
+
+    return this.defaultTools;
+  }
+
+  private getPrompt() {
+    const builtPrompt = ChatPromptTemplate.fromTemplate(
+      this.prompts.systemPrompt,
+    );
+
+    return builtPrompt;
+  }
+
+  public getGraph() {
+    this.logger.debug("Getting graph for langgraph agent");
+    if (this.graph) {
+      return this.graph;
+    }
+    this.logger.debug("need to compile graph first ");
+
+    const tools = this.getTools();
+
+    this.graph = createReactAgent({
+      llm: this.primaryChatModel.model,
+      tools,
+      // TODO: with these uncommented, we cant call tools successfully. i suspect an issue with missing state but can't confirm, yet.
+      // prompt: this.getPrompt(),
+      // stateSchema: this.stateDefinition,
+      checkpointSaver: this.checkpointerAdapter.instance,
+    });
 
     this.logger.log(
-      `Initialized LangGraph React Agent with ${this.defaultTools.length} tools`,
+      `Initialized LangGraph React Agent with ${tools.length} tools`,
     );
-  }
 
-  async invoke(input: AgentInvocationInput): Promise<AgentInvocationResult> {
-    const startTime = Date.now();
-
-    try {
-      const prompt = ChatPromptTemplate.fromMessages([
-        ["system", this.prompts.systemPrompt],
-      ]);
-
-      this.logger.debug("sessionId", input.session.sessionId);
-
-      // Build the system prompt with provided context
-      const systemPromptContent = await prompt.format({
-        human_name: `<@${input.session.userId}> (using exactly this syntax will translate to the humans name as a mention in slack)`,
-        system_prompt: (input.systemPrompt ||
-          input.context?.additionalSystemPrompt ||
-          "") as string,
-
-        // TODO: the date and timezone should come from the caller, not the server
-        current_date_iso: new Date().toISOString(),
-        current_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-
-      const agent = createReactAgent({
-        llm: this.primaryChatModel.model,
-        tools: this.defaultTools,
-        prompt: systemPromptContent,
-        checkpointSaver: this.checkpointerAdapter.instance,
-      });
-
-      const langGraphConfig: Parameters<typeof agent.invoke>[1] = {
-        configurable: {
-          thread_id: input.session.sessionId,
-        },
-      };
-
-      const agentResult = await agent.invoke(
-        {
-          messages: input.messages,
-        },
-        langGraphConfig,
-      );
-
-      const duration = Date.now() - startTime;
-
-      return {
-        messages: agentResult.messages || [],
-        metadata: {
-          duration,
-          // TODO: remove confidence if we cant set a suitable value
-          confidence: 1.0, // LangGraph doesn't provide confidence, default to high
-          agentId: this.agentId,
-          // TODO: remove toolsUsed - this isnt providing value as it is
-          toolsUsed: this.defaultTools.length,
-        },
-        success: true,
-      };
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error(
-        "Agent invocation failed",
-        error instanceof Error ? error.stack : undefined,
-      );
-
-      return {
-        messages: [],
-        metadata: {
-          duration,
-          agentId: this.agentId,
-        },
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      };
-    }
-  }
-
-  async healthCheck(): Promise<AgentHealthResult> {
-    try {
-      // Simple test to verify LLM is responsive
-      const testResult = await this.primaryChatModel.model.invoke([
-        new ChatMessage({ content: "Hello", role: "human" }),
-      ]);
-
-      const isHealthy = !!testResult.content;
-
-      return {
-        healthy: isHealthy,
-        status: isHealthy
-          ? `Agent is healthy with ${this.defaultTools.length} tools available`
-          : "Agent is not responding properly",
-        metrics: {
-          //TODO: most of these metrics do not add value. they are derivde from basic stuff - we should probably remove them
-          lastSuccess: isHealthy ? new Date() : undefined,
-          successCount: isHealthy ? 1 : 0,
-          errorCount: isHealthy ? 0 : 1,
-          toolsCount: this.defaultTools.length,
-          modelType: this.primaryChatModel.model.constructor.name,
-        },
-      };
-    } catch (error) {
-      this.logger.error(
-        "Agent health check failed",
-        error instanceof Error ? error.stack : undefined,
-      );
-
-      return {
-        healthy: false,
-        status: `Health check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        metrics: {
-          errorCount: 1,
-          toolsCount: this.defaultTools.length,
-        },
-      };
-    }
-  }
-
-  getCapabilities() {
-    //TODO: review how 'capabilities' are being used. there seems to be duplicate and worthless stuff in this object
-    return Promise.resolve({
-      supportedTaskTypes: [
-        "general-reasoning",
-        "tool-usage",
-        "conversation",
-        "question-answering",
-        "task-execution",
-      ],
-      requiredInputs: ["messages", "session"],
-      optionalInputs: ["context", "systemPrompt", "metadata"],
-      maxMessages: 1000, // Reasonable default
-      responseTimeRange: {
-        min: 1000, // 1 second
-        max: 30000, // 30 seconds
-      },
-      toolsAvailable: this.defaultTools.length,
-      modelProvider: this.primaryChatModel.model.constructor.name,
-    });
-  }
-
-  validateInput(input: AgentInvocationInput) {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    if (!input.messages || input.messages.length === 0) {
-      errors.push("Messages array is required and cannot be empty");
-    }
-
-    if (!input.session) {
-      errors.push("Session is required");
-    } else {
-      if (!input.session.sessionId) {
-        errors.push("Session must have a valid sessionId");
-      }
-      if (!input.session.userId) {
-        warnings.push(
-          "Session userId is not provided - some features may be limited",
-        );
-      }
-    }
-
-    if (input.messages && input.messages.length > 1000) {
-      warnings.push("Large number of messages may impact performance");
-    }
-
-    return Promise.resolve({
-      valid: errors.length === 0,
-      errors: errors.length > 0 ? errors : undefined,
-      warnings: warnings.length > 0 ? warnings : undefined,
-    });
+    return this.graph;
   }
 }

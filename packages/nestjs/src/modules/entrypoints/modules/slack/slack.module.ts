@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigType } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
 import { SlackModule } from "nestjs-slack-bolt";
-import { SlackModuleOptions } from "nestjs-slack-bolt/dist/interfaces/modules/module.options";
 import slackConfig from "src/modules/config-management/configs/slack.config";
 
 import { SlackEntrypointController } from "./slack.controller";
@@ -32,7 +31,7 @@ import { SlackReceiverController } from "./slack-receiver.controller";
           socketMode: config.socketMode,
           signingSecret: config.signingSecret,
           token: config.botToken,
-          logLevel: "debug" as SlackModuleOptions["logLevel"],
+          logLevel: config.logLevel,
           tokenVerificationEnabled: false,
           receiver,
         };

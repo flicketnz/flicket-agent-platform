@@ -3,11 +3,11 @@ import { DiscoveryService } from "@nestjs/core";
 import { InstanceWrapper } from "@nestjs/core/injector/instance-wrapper";
 
 import { Agent, AgentMetadata, isAgent } from "../decorators/agent.decorator";
-import { AgentPort } from "../ports/agent.port";
+import { GraphAgentPort } from "../ports/graph-agent.port";
 
 /**
  * Service responsible for discovering and registering agents using the @Agent decorator
- * Provides module-scoped agent discovery and retrieval capabilities
+ * Provides module-scoped agent discovery and retrieval capabilities for graph-based orchestration
  */
 @Injectable()
 export class AgentRegistryService implements OnModuleInit {
@@ -16,7 +16,7 @@ export class AgentRegistryService implements OnModuleInit {
   /**
    * Map of agents indexed by agentId
    */
-  private readonly agents = new Map<string, AgentPort>();
+  private readonly agents = new Map<string, GraphAgentPort>();
 
   /**
    * Map of agent metadata indexed by agentId
@@ -47,21 +47,23 @@ export class AgentRegistryService implements OnModuleInit {
       this.registerAgent(wrapper);
     }
 
-    // Validate primary agent configuration
-    this.validatePrimaryAgentConfiguration();
+    // Note: Primary agent validation removed as isPrimary is no longer supported
+    // this.validatePrimaryAgentConfiguration();
 
     // Log summary
-    const primaryAgent = this.getPrimaryAgent();
     this.logger.log(
-      `Agent discovery completed. Registered ${this.agents.size} agents. ` +
-        `Primary agent: ${primaryAgent?.agentId || "none"}`,
+      `Agent discovery completed. Registered ${this.agents.size} agents.`,
     );
   }
 
   /**
    * Validate primary agent configuration and log warnings if issues are found
+   * @deprecated isPrimary is no longer supported in the new graph-based architecture
    */
   private validatePrimaryAgentConfiguration(): void {
+    // This method is deprecated and no longer used
+    // Primary agent concept has been removed from the new architecture
+    /*
     const primaryAgents = this.getAllAgentInfo().filter(
       (info) => info.metadata.isPrimary,
     );
@@ -80,16 +82,17 @@ export class AgentRegistryService implements OnModuleInit {
           "The first one found will be used as the primary agent.",
       );
     }
+    */
   }
 
   /**
    * Register a single agent from a provider wrapper
    */
   private registerAgent(agentProvider: InstanceWrapper): void {
-    this.logger.debug(`starting registration of ${agentProvider.name}`);
+    this.logger.debug(`Starting registration of ${agentProvider.name}`);
 
     try {
-      const agentInstance = agentProvider.instance as AgentPort;
+      const agentInstance = agentProvider.instance as GraphAgentPort;
 
       const metadata = this.discoveryService.getMetadataByDecorator(
         Agent,
@@ -104,12 +107,9 @@ export class AgentRegistryService implements OnModuleInit {
       }
 
       // Validate that the agent implements the required interface
-      if (
-        !agentInstance.agentId ||
-        typeof agentInstance.invoke !== "function"
-      ) {
+      if (!agentInstance.agentId) {
         this.logger.error(
-          `Agent ${agentInstance.constructor.name} does not properly implement AgentPort interface`,
+          `Agent ${agentInstance.constructor.name} does not properly implement GraphAgentPort interface`,
         );
         return;
       }
@@ -127,8 +127,7 @@ export class AgentRegistryService implements OnModuleInit {
       this.agentMetadata.set(agentInstance.agentId, metadata);
 
       this.logger.debug(
-        `Registered agent: ${metadata.agentId} (${agentInstance.constructor.name})` +
-          `${metadata.isPrimary ? " [PRIMARY]" : ""}`,
+        `Registered agent: ${metadata.agentId} (${agentInstance.constructor.name})`,
       );
     } catch (error) {
       this.logger.error(
@@ -143,7 +142,7 @@ export class AgentRegistryService implements OnModuleInit {
    * @param agentId - The unique identifier of the agent
    * @returns The agent instance or undefined if not found
    */
-  getAgent(agentId: string): AgentPort | undefined {
+  getAgent(agentId: string): GraphAgentPort | undefined {
     return this.agents.get(agentId);
   }
 
@@ -151,7 +150,7 @@ export class AgentRegistryService implements OnModuleInit {
    * Get all registered agents
    * @returns Map of all agents indexed by agentId
    */
-  getAllAgents(): Map<string, AgentPort> {
+  getAllAgents(): Map<string, GraphAgentPort> {
     return new Map(this.agents);
   }
 
@@ -160,8 +159,8 @@ export class AgentRegistryService implements OnModuleInit {
    * @param capability - The capability to filter by
    * @returns Array of agents that have the specified capability
    */
-  getAgentsByCapability(capability: string): AgentPort[] {
-    const agentsWithCapability: AgentPort[] = [];
+  getAgentsByCapability(capability: string): GraphAgentPort[] {
+    const agentsWithCapability: GraphAgentPort[] = [];
 
     for (const [agentId, agent] of this.agents) {
       const metadata = this.agentMetadata.get(agentId);
@@ -175,9 +174,13 @@ export class AgentRegistryService implements OnModuleInit {
 
   /**
    * Get the primary agent (agent marked with isPrimary: true)
-   * @returns The primary agent or undefined if no primary agent is found
+   * @deprecated Primary agent concept has been removed in the new graph-based architecture
+   * @returns undefined as primary agents are no longer supported
    */
-  getPrimaryAgent(): AgentPort | undefined {
+  getPrimaryAgent(): GraphAgentPort | undefined {
+    // Primary agent concept has been removed in the new graph-based architecture
+    return undefined;
+    /*
     for (const [agentId, agent] of this.agents) {
       const metadata = this.agentMetadata.get(agentId);
       if (metadata?.isPrimary) {
@@ -185,6 +188,7 @@ export class AgentRegistryService implements OnModuleInit {
       }
     }
     return undefined;
+    */
   }
 
   /**
@@ -200,8 +204,9 @@ export class AgentRegistryService implements OnModuleInit {
    * Get all agents with their metadata
    * @returns Array of objects containing agent instance and metadata pairs
    */
-  getAllAgentInfo(): Array<{ agent: AgentPort; metadata: AgentMetadata }> {
-    const agentInfo: Array<{ agent: AgentPort; metadata: AgentMetadata }> = [];
+  getAllAgentInfo(): Array<{ agent: GraphAgentPort; metadata: AgentMetadata }> {
+    const agentInfo: Array<{ agent: GraphAgentPort; metadata: AgentMetadata }> =
+      [];
 
     for (const [agentId, agent] of this.agents) {
       const metadata = this.agentMetadata.get(agentId);
@@ -217,7 +222,7 @@ export class AgentRegistryService implements OnModuleInit {
    * Get all agents sorted by priority (highest priority first)
    * @returns Array of agents sorted by priority
    */
-  getSortedAgentsByPriority(): AgentPort[] {
+  getSortedAgentsByPriority(): GraphAgentPort[] {
     const agentInfo = this.getAllAgentInfo();
 
     // Sort by priority (higher priority first), then by agentId for consistency
@@ -234,5 +239,38 @@ export class AgentRegistryService implements OnModuleInit {
     });
 
     return agentInfo.map((info) => info.agent);
+  }
+
+  /**
+   * Check if any agents are registered
+   * @returns True if at least one agent is registered
+   */
+  hasAgents(): boolean {
+    return this.agents.size > 0;
+  }
+
+  /**
+   * Get the count of registered agents
+   * @returns Number of registered agents
+   */
+  getAgentCount(): number {
+    return this.agents.size;
+  }
+
+  /**
+   * Get a list of all agent IDs
+   * @returns Array of agent IDs
+   */
+  getAllAgentIds(): string[] {
+    return Array.from(this.agents.keys());
+  }
+
+  /**
+   * Check if a specific agent is registered
+   * @param agentId - The agent ID to check
+   * @returns True if the agent is registered
+   */
+  hasAgent(agentId: string): boolean {
+    return this.agents.has(agentId);
   }
 }

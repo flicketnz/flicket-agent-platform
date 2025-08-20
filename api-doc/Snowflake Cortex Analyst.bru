@@ -1,0 +1,22 @@
+meta {
+  name: Snowflake Cortex Analyst
+  type: http
+  seq: 3
+}
+
+post {
+  url: https://FLICKET-AUS.snowflakecomputing.com/api/v2/cortex/analyst/message
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NTU2ODU2MjksImV4cCI6MTc1NTY4OTIyOSwiaXNzIjoiRkxJQ0tFVC1BVVMuRkxJQ0tFVF9BR0VOVF9QTEFURk9STV9MT0NBTC5TSEEyNTY6WHlrODJ5RUhWVndzUnVsNVp2UElpS3NlR29reXFWTEthUElXV3BjV2pGOD0iLCJzdWIiOiJGTElDS0VULUFVUy5GTElDS0VUX0FHRU5UX1BMQVRGT1JNX0xPQ0FMIn0.rZtwVLRR2k7mvvXTk0ahEJerkTHjnWA8CpP_7YivH7A
+}
+
+body:json {
+  {
+    "messages":[{"role":"user", "content":"What is my revennue"}],
+    "semantic_model_file":"POSTGRES_SOURCE.NZ.REVENUE"
+  }
+}

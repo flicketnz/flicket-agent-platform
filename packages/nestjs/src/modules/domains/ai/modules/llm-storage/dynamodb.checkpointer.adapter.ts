@@ -283,7 +283,7 @@ export class DynamoDBCheckpointerAdapter
           .query({ threadId })
           .filter("recordId")
           .beginsWith(`checkpoint#${checkpointNs}#`)
-          .limit(10)
+          // .limit(10)
           .exec();
         this.logger.debug(`Found ${results.length} checkpoints`);
         if (results.length === 0) {

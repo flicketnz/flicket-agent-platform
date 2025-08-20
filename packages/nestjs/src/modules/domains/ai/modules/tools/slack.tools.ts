@@ -22,7 +22,7 @@ export class SlackTool implements AiToolProvider, OnModuleInit {
   ) {}
 
   onModuleInit() {
-    const enabled = this.configService.get<string>("llm.tools.slack.enabled");
+    const enabled = this.configService.get<boolean>("llm.tools.slack.enabled");
     const toolList: StructuredToolInterface[] = [];
 
     if (enabled) {
@@ -80,7 +80,7 @@ export class SlackTool implements AiToolProvider, OnModuleInit {
       //         page: z
       //           .string()
       //           .describe(
-      //             "page number of the search - incase there are many results and youneed to paginate",
+      //             "page number of the search - incase there are many results and you need to paginate",
       //           ),
       //         query: z
       //           .string()
