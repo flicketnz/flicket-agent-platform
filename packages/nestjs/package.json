@@ -11,7 +11,8 @@
     "start:dev": "slack run --app $(jq -r '.custom_managed_local_app.app_id // empty' .slack/custom-managed-apps.json)",
     "start:prod": "node dist/main",
     "lint": "eslint src/**/*",
-    "test": "vitest run",
+    "test": "vitest run -t '^(?!.*dynamodb-checkpoint-saver#list).*$'",
+    "test:all": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest --coverage"
   },

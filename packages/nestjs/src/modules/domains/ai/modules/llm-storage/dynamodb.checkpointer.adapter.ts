@@ -13,6 +13,7 @@ import {
   WRITES_IDX_MAP,
 } from "@langchain/langgraph-checkpoint";
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { SortOrder } from "dynamoose/dist/General";
 import { InjectModel, Item, type Model } from "nestjs-dynamoose";
 
 import type { CheckpointerPort } from "./ports/checkpointer.port";
@@ -92,11 +93,13 @@ export class DynamoDBCheckpointerAdapter
   }
 
   private _serializeData(data: Uint8Array): string {
-    return Buffer.from(data).toString("base64");
+    // return Buffer.from(data).toString("base64");
+    return Buffer.from(data).toString("utf8");
   }
 
   private _deserializeData(data: string): Uint8Array {
-    return new Uint8Array(Buffer.from(data, "base64"));
+    // return new Uint8Array(Buffer.from(data, "base64"));
+    return new Uint8Array(Buffer.from(data, "utf8"));
   }
 
   private _isStoredCheckpointData(item: Item<Checkpoints>) {
@@ -246,13 +249,10 @@ export class DynamoDBCheckpointerAdapter
   }
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
-    this.logger.verbose("Starting getTuple operation");
     const threadId = config.configurable?.thread_id as string | undefined;
     const checkpointNs =
       (config.configurable?.checkpoint_ns as string | undefined) ?? "";
     const checkpointId = getCheckpointId(config);
-
-    this.logger.debug(`thread: ${threadId}, checkpointId: ${checkpointId}`);
 
     if (!threadId) {
       return undefined;
@@ -268,7 +268,6 @@ export class DynamoDBCheckpointerAdapter
         const result = await this.checkpointsModel.get({ threadId, recordId });
 
         if (result && this._isStoredCheckpointData(result)) {
-          this.logger.debug("Checkout found for specific checkpointId");
           return await this._buildCheckpointTuple(
             result,
             config,
@@ -283,25 +282,17 @@ export class DynamoDBCheckpointerAdapter
           .query({ threadId })
           .filter("recordId")
           .beginsWith(`checkpoint#${checkpointNs}#`)
-          // .limit(10)
+          .sort(SortOrder.descending)
+          .limit(1)
           .exec();
-        this.logger.debug(`Found ${results.length} checkpoints`);
         if (results.length === 0) {
           return undefined;
         }
 
-        // Sort by record ID descending (most recent first) and get the first one
-        const sortedResults = results.sort((a, b) => {
-          const aId = a.recordId || "";
-          const bId = b.recordId || "";
-          return bId.localeCompare(aId);
-        });
-
-        const latestCheckpoint = sortedResults[0];
+        const latestCheckpoint = results[0];
 
         if (this._isStoredCheckpointData(latestCheckpoint)) {
           const parsed = this._parseCheckpointKey(latestCheckpoint.recordId);
-          this.logger.debug("Checkout found for latest checkpoint in thread");
           return await this._buildCheckpointTuple(
             latestCheckpoint,
             config,
@@ -384,63 +375,51 @@ export class DynamoDBCheckpointerAdapter
     this.logger.verbose("Starting List operation");
     const { before, limit, filter } = options ?? {};
     const threadIds: string[] = config.configurable?.thread_id
-      ? [config.configurable.thread_id as string]
+      ? Array.isArray(config.configurable.thread_id)
+        ? (config.configurable.thread_id as string[])
+        : [config.configurable.thread_id as string]
       : [];
-    const configCheckpointNamespace =
-      (config.configurable?.checkpoint_ns as string | undefined) ?? "";
+
+    // Use undefined if checkpoint_ns is not provided, vs "" if explicitly set to ""
+    const configCheckpointNamespace = config.configurable?.checkpoint_ns as
+      | string
+      | undefined;
+    const hasExplicitNamespace = "checkpoint_ns" in (config.configurable ?? {});
 
     const configCheckpointId = getCheckpointId(config);
 
-    if (threadIds.length === 0) {
-      // If no specific thread_id, we'd need to scan all threads, which is expensive
-      // For now, return empty if no thread_id specified
-      return;
-    }
-
     let processedCount = 0;
 
-    for (const threadId of threadIds) {
+    if (threadIds.length === 0) {
+      // If no specific thread_id, use scan (limited filtering capabilities)
       try {
-        let query = this.checkpointsModel
-          .query({ threadId })
-          .filter("recordId")
-          .beginsWith("checkpoint#");
+        // Build scan with available filter expressions
+        let scanQuery = this.checkpointsModel.scan();
 
-        // Filter by namespace if specified
-        if (configCheckpointNamespace) {
-          query = query
-            .filter("recordId")
-            .beginsWith(`checkpoint#${configCheckpointNamespace}#`);
-        }
+        // Add filter for checkpoint records only
+        scanQuery = scanQuery.filter("recordId").beginsWith("checkpoint#");
 
-        // Apply before filter if specified
-        if (before?.configurable?.checkpoint_id) {
-          const beforeKey = this._generateCheckpointKey(
-            configCheckpointNamespace,
-            getCheckpointId(before),
-          );
-          query = query.filter("recordId").lt(beforeKey);
-        }
+        // DynamoDB scan doesn't support complex filtering, so we still need some post-processing
+        const scanResults = await scanQuery.exec();
 
-        const results = await query.exec();
-
-        // Sort by record ID descending (most recent first)
-        const sortedResults = results.sort((a, b) => {
-          const aId = a.recordId || "";
-          const bId = b.recordId || "";
-          return bId.localeCompare(aId);
-        });
+        // Apply improved sorting to the results
+        const sortedResults = this._sortCheckpointResults(scanResults);
 
         for (const result of sortedResults) {
           if (limit !== undefined && processedCount >= limit) {
             return;
           }
 
-          if (!this._isStoredCheckpointData(result)) {
-            continue;
-          }
-
           const parsed = this._parseCheckpointKey(result.recordId);
+
+          // Filter by namespace if explicitly specified
+          if (hasExplicitNamespace) {
+            if (
+              parsed.checkpointNamespace !== (configCheckpointNamespace ?? "")
+            ) {
+              continue;
+            }
+          }
 
           // Filter by specific checkpoint ID if provided
           if (
@@ -450,26 +429,38 @@ export class DynamoDBCheckpointerAdapter
             continue;
           }
 
-          const metadata = (await this.serde.loadsTyped(
-            "json",
-            this._deserializeData(result.metadata!),
-          )) as CheckpointMetadata;
+          // Apply before filter if specified
+          if (before?.configurable?.checkpoint_id) {
+            const beforeKey = this._generateCheckpointKey(
+              (before.configurable.checkpoint_ns as string) || "",
+              getCheckpointId(before),
+            );
+            if (result.recordId >= beforeKey) {
+              continue;
+            }
+          }
 
-          // Apply metadata filter
-          if (
-            filter &&
-            !Object.entries(filter).every(
-              ([key, value]) =>
-                (metadata as Record<string, unknown>)[key] === value,
-            )
-          ) {
-            continue;
+          // Apply metadata filter (requires deserialization)
+          if (filter) {
+            const metadata = (await this.serde.loadsTyped(
+              "json",
+              this._deserializeData(result.metadata!),
+            )) as CheckpointMetadata;
+
+            if (
+              !Object.entries(filter).every(
+                ([key, value]) =>
+                  (metadata as Record<string, unknown>)[key] === value,
+              )
+            ) {
+              continue;
+            }
           }
 
           const checkpointTuple = await this._buildCheckpointTuple(
             result,
             config,
-            threadId,
+            result.threadId,
             parsed.checkpointNamespace,
             parsed.checkpointId,
           );
@@ -478,12 +469,137 @@ export class DynamoDBCheckpointerAdapter
           processedCount++;
         }
       } catch (error) {
-        this.logger.error(
-          `Failed to list checkpoints for thread ${threadId}:`,
-          error,
-        );
+        this.logger.error(`Failed to scan checkpoints:`, error);
+      }
+    } else {
+      // If specific thread_ids are provided, use optimized query with DynamoDB-level filtering
+      for (const threadId of threadIds) {
+        try {
+          let checkpointPrefix = "checkpoint#";
+
+          // Build optimized prefix for namespace filtering
+          if (hasExplicitNamespace) {
+            if (configCheckpointNamespace !== undefined) {
+              checkpointPrefix = `checkpoint#${configCheckpointNamespace}#`;
+            } else {
+              checkpointPrefix = "checkpoint##";
+            }
+          }
+          // console.log("------------------> pk: ", threadIds);
+          // console.log("------------------> sortkey: ", checkpointPrefix);
+
+          // Build query with DynamoDB-level sorting and filtering
+          let query = this.checkpointsModel
+            .query({ threadId })
+            .where("recordId")
+            .beginsWith(checkpointPrefix)
+            .sort(SortOrder.descending); // DynamoDB-level sorting
+
+          // Apply limit at DynamoDB level for better performance
+          if (limit !== undefined) {
+            const remainingLimit = limit - processedCount;
+            if (remainingLimit <= 0) {
+              return;
+            }
+            query = query.limit(remainingLimit * 2); // Get extra to account for filtering
+          }
+
+          const results = await query.exec();
+
+          // console.log("------------------> q results: ", results);
+          // returns 2 checkpoints
+
+          for (const result of results) {
+            if (limit !== undefined && processedCount >= limit) {
+              return;
+            }
+            // console.log("==============> Before isStored");
+            if (!this._isStoredCheckpointData(result)) {
+              continue;
+            }
+            // console.log("==============> Before after");
+
+            const parsed = this._parseCheckpointKey(result.recordId);
+
+            // console.log("==============> Before checkpointIdMatch");
+            // Filter by specific checkpoint ID if provided
+            if (
+              configCheckpointId &&
+              parsed.checkpointId !== configCheckpointId
+            ) {
+              continue;
+            }
+            // console.log("==============> after checkpointIdMatch");
+
+            // console.log("==============> before filter applied");
+            // Apply before filter if specified
+            if (before?.configurable?.checkpoint_id) {
+              const beforeKey = this._generateCheckpointKey(
+                (before.configurable.checkpoint_ns as string) || "",
+                getCheckpointId(before),
+              );
+              if (result.recordId >= beforeKey) {
+                continue;
+              }
+            }
+            // console.log("==============> after filter applied");
+
+            // Apply metadata filter (requires deserialization)
+            if (filter) {
+              const metadata = (await this.serde.loadsTyped(
+                "json",
+                this._deserializeData(result.metadata!),
+              )) as CheckpointMetadata;
+
+              if (
+                !Object.entries(filter).every(
+                  ([key, value]) =>
+                    (metadata as Record<string, unknown>)[key] === value,
+                )
+              ) {
+                continue;
+              }
+            }
+
+            const checkpointTuple = await this._buildCheckpointTuple(
+              result,
+              config,
+              threadId,
+              parsed.checkpointNamespace,
+              parsed.checkpointId,
+            );
+
+            yield checkpointTuple;
+            processedCount++;
+          }
+        } catch (error) {
+          this.logger.error(
+            `Failed to list checkpoints for thread ${threadId}:`,
+            error,
+          );
+        }
       }
     }
+  }
+
+  /**
+   * Sort checkpoint results by recordId in descending order
+   * This provides consistent ordering since DynamoDB scan doesn't support sorting
+   */
+  private _sortCheckpointResults(
+    results: Item<Checkpoints>[],
+  ): Item<Checkpoints>[] {
+    return results.sort((a, b) => {
+      // Sort by recordId in descending order for most recent first
+      const comparison = b.recordId.localeCompare(a.recordId);
+
+      // If recordIds are the same, sort by checkpointTs if available
+      if (comparison === 0 && a.checkpointTs && b.checkpointTs) {
+        return b.checkpointTs.localeCompare(a.checkpointTs);
+      }
+
+      return comparison;
+    });
   }
 
   async put(
@@ -504,9 +620,30 @@ export class DynamoDBCheckpointerAdapter
     }
 
     try {
+      // Create a copy of the checkpoint to modify
+      const modifiedCheckpoint = { ...checkpoint };
+
+      // Only store channel_values that have changed (are present in newVersions)
+      if (
+        modifiedCheckpoint.channel_values &&
+        Object.keys(newVersions).length > 0
+      ) {
+        const filteredChannelValues: Record<string, unknown> = {};
+        for (const channelName of Object.keys(newVersions)) {
+          if (channelName in modifiedCheckpoint.channel_values) {
+            filteredChannelValues[channelName] =
+              modifiedCheckpoint.channel_values[channelName];
+          }
+        }
+        modifiedCheckpoint.channel_values = filteredChannelValues;
+      } else if (Object.keys(newVersions).length === 0) {
+        // If newVersions is empty, store empty channel_values
+        modifiedCheckpoint.channel_values = {};
+      }
+
       const [[, serializedCheckpoint], [, serializedMetadata]] =
         await Promise.all([
-          this.serde.dumpsTyped(checkpoint),
+          this.serde.dumpsTyped(modifiedCheckpoint),
           this.serde.dumpsTyped(metadata),
         ]);
 
@@ -520,6 +657,7 @@ export class DynamoDBCheckpointerAdapter
         recordId,
         checkpoint: this._serializeData(serializedCheckpoint),
         metadata: this._serializeData(serializedMetadata),
+        checkpointTs: checkpoint.ts,
         parentCheckpointId: config.configurable?.checkpoint_id as
           | string
           | undefined,
@@ -552,6 +690,7 @@ export class DynamoDBCheckpointerAdapter
     const checkpointId = getCheckpointId(config);
 
     if (!threadId) {
+      this.logger.debug(config);
       throw new Error(
         `Failed to put writes. The passed RunnableConfig is missing a required "thread_id" field in its "configurable" property`,
       );

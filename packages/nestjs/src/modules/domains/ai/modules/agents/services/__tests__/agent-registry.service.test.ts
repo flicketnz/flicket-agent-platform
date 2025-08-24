@@ -398,41 +398,6 @@ describe("AgentRegistryService", () => {
     });
   });
 
-  describe("getPrimaryAgent", () => {
-    it("should return undefined when no primary agent marker exists in current implementation", () => {
-      const primaryAgent = new MockPrimaryAgent();
-      const secondaryAgent = new MockSecondaryAgent();
-
-      const mockWrappers: InstanceWrapper[] = [
-        {
-          name: "MockPrimaryAgent",
-          instance: primaryAgent,
-        } as InstanceWrapper,
-        {
-          name: "MockSecondaryAgent",
-          instance: secondaryAgent,
-        } as InstanceWrapper,
-      ];
-
-      mockDiscoveryService.getProviders.mockReturnValue(mockWrappers);
-      mockDiscoveryService.getMetadataByDecorator
-        .mockReturnValueOnce({
-          agentId: "primary-agent",
-          capabilities: ["chat", "search"],
-        })
-        .mockReturnValueOnce({
-          agentId: "secondary-agent",
-          capabilities: ["analytics", "search"],
-        });
-
-      service.onModuleInit();
-
-      // Since the new decorator doesn't support isPrimary, this should return undefined
-      const primary = service.getPrimaryAgent();
-      expect(primary).toBeUndefined();
-    });
-  });
-
   describe("getAgentMetadata", () => {
     beforeEach(() => {
       const primaryAgent = new MockPrimaryAgent();

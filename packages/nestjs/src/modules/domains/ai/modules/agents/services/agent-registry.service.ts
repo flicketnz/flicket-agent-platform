@@ -40,49 +40,17 @@ export class AgentRegistryService implements OnModuleInit {
           isAgent((provider.instance as object).constructor),
       );
 
-    this.logger.debug(`Found ${agentProviders.length} agent providers`);
+    this.logger.log(`Found ${agentProviders.length} agent providers`);
 
     // Register each discovered agent
     for (const wrapper of agentProviders) {
       this.registerAgent(wrapper);
     }
 
-    // Note: Primary agent validation removed as isPrimary is no longer supported
-    // this.validatePrimaryAgentConfiguration();
-
     // Log summary
     this.logger.log(
       `Agent discovery completed. Registered ${this.agents.size} agents.`,
     );
-  }
-
-  /**
-   * Validate primary agent configuration and log warnings if issues are found
-   * @deprecated isPrimary is no longer supported in the new graph-based architecture
-   */
-  private validatePrimaryAgentConfiguration(): void {
-    // This method is deprecated and no longer used
-    // Primary agent concept has been removed from the new architecture
-    /*
-    const primaryAgents = this.getAllAgentInfo().filter(
-      (info) => info.metadata.isPrimary,
-    );
-
-    if (primaryAgents.length === 0) {
-      this.logger.warn(
-        "No primary agent found. Consider marking one agent with isPrimary: true for default operations.",
-      );
-    } else if (primaryAgents.length > 1) {
-      const primaryAgentIds = primaryAgents
-        .map((info) => info.metadata.agentId)
-        .join(", ");
-      this.logger.warn(
-        `Multiple primary agents detected: [${primaryAgentIds}]. ` +
-          "Only one agent should be marked with isPrimary: true. " +
-          "The first one found will be used as the primary agent.",
-      );
-    }
-    */
   }
 
   /**
@@ -170,25 +138,6 @@ export class AgentRegistryService implements OnModuleInit {
     }
 
     return agentsWithCapability;
-  }
-
-  /**
-   * Get the primary agent (agent marked with isPrimary: true)
-   * @deprecated Primary agent concept has been removed in the new graph-based architecture
-   * @returns undefined as primary agents are no longer supported
-   */
-  getPrimaryAgent(): GraphAgentPort | undefined {
-    // Primary agent concept has been removed in the new graph-based architecture
-    return undefined;
-    /*
-    for (const [agentId, agent] of this.agents) {
-      const metadata = this.agentMetadata.get(agentId);
-      if (metadata?.isPrimary) {
-        return agent;
-      }
-    }
-    return undefined;
-    */
   }
 
   /**

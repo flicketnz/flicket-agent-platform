@@ -55,3 +55,80 @@ To run the application in a development environment, the `start:dev` script in
 - **`vitest`**: The testing framework of choice for the NestJS application.
 - **Slack CLI**: Used for local development and running the application in a
   simulated Slack environment.
+
+## Testing Best Practices
+
+### Unit Testing Guidelines
+
+**Preferred Approach:**
+
+- Use direct class instantiation with mocked dependencies instead of NestJS
+  TestingModule
+- Mock dependencies at the interface level, not implementation details
+- Focus on testing business logic and behavior, not implementation details
+
+**Example Pattern:**
+
+```typescript
+// ✅ Preferred: Direct instantiation
+const service = new MyService(
+  mockDependency1 as unknown as Dependency1Port,
+  mockDependency2 as unknown as Dependency2Port,
+);
+
+// ❌ Avoid: TestingModule for unit tests
+const module = await Test.createTestingModule({...}).compile();
+```
+
+### What NOT to Test
+
+**Avoid Fragile Tests:**
+
+- **Logger statements** - These are implementation details and make tests
+  brittle
+- **Framework internals** - Focus on your business logic, not NestJS mechanics
+- **External library behavior** - Mock the interfaces, don't test library
+  implementations
+
+**Example of what to avoid:**
+
+```typescript
+// ❌ Fragile - testing logging implementation
+expect(mockLogger.debug).toHaveBeenCalledWith("Starting process");
+
+// ✅ Better - test the actual behavior
+expect(result.success).toBe(true);
+expect(result.data).toEqual(expectedData);
+```
+
+### Mocking Strategy
+
+**Complex Dependencies:**
+
+- When working with complex frameworks like LangGraph, mock at the service
+  boundary
+- Create simple mocks that simulate expected behavior without complex internal
+  logic
+- Use spies on methods that matter for your business logic, not framework
+  internals
+
+**Dependency Injection:**
+
+- Mock ports/interfaces, not concrete implementations
+- Use `vi.fn()` for simple function mocking
+- Use proper TypeScript casting: `mockObject as unknown as InterfaceType`
+
+### Test Structure
+
+**Focus Areas:**
+
+- Constructor dependency injection
+- Core business logic methods
+- Error handling scenarios
+- Edge cases and boundary conditions
+
+**Avoid:**
+
+- Testing framework setup/teardown
+- Testing that mocks work as expected
+- Over-mocking internal implementation details

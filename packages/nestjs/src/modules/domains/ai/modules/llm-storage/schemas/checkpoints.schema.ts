@@ -12,6 +12,9 @@ export const CheckpointsSchema = new Schema({
   checkpoint: {
     type: String,
   },
+  checkpointTs: {
+    type: String,
+  },
   metadata: {
     type: String,
   },

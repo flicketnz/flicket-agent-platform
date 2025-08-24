@@ -9,6 +9,7 @@ import agentSnowflakeCortexConfig from "src/modules/config-management/configs/ag
 import { SnowflakeCortexAgentAdapter } from "./adapters/snowflake-cortex.agent";
 import { CortexController } from "./controllers";
 import { SnowflakeJwtService } from "./services/snowflake-jwt.service";
+import { SnowflakeSQLService } from "./services/snowflake-sql.service";
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { SnowflakeJwtService } from "./services/snowflake-jwt.service";
       },
     },
     SnowflakeJwtService,
+    SnowflakeSQLService,
   ],
   exports: [SnowflakeCortexAgentAdapter, SnowflakeJwtService],
   // TODO: this controller is here until i move it to an proper entrypoint module

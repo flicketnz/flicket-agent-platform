@@ -70,6 +70,7 @@ export const initializer: CheckpointSaverTestInitializer<DynamoDBCheckpointerAda
                   secretAccessKey: "fake",
                 },
                 endpoint: `http://${startedContainer.getHost()}:${startedContainer.getMappedPort(8000)}`,
+                // endpoint: `http://localhost:8000`,
                 region: "localhost",
               });
 

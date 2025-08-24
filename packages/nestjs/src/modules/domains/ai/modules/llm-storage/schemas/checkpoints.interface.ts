@@ -8,6 +8,7 @@ export interface Checkpoints extends CheckpointsKey {
   checkpoint?: string;
   metadata?: string;
   parentCheckpointId?: string;
+  checkpointTs?: string;
 
   // Write-specific fields (only present for write records)
   taskId?: string;

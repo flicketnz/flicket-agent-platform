@@ -14,13 +14,21 @@ import {
   StateGraph,
 } from "@langchain/langgraph";
 import { HttpService } from "@nestjs/axios";
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import type { ConfigType } from "@nestjs/config";
 import { isAxiosError } from "@nestjs/terminus/dist/utils";
 import { firstValueFrom, timeout } from "rxjs";
+import { ConversationSession } from "src/common/types/conversation-session.type";
 import { normalizeMessage } from "src/common/utils/message.utils";
+import agentSnowflakeCortexConfig from "src/modules/config-management/configs/agent-snowflake-cortex.config";
 
 import { Agent, GraphAgentPort } from "../../agents";
 import { SnowflakeJwtService } from "../services/snowflake-jwt.service";
+import {
+  SnowflakeSQLService,
+  SQLExecutionResult,
+  TenantContext,
+} from "../services/snowflake-sql.service";
 
 /**
  * Interface for Snowflake Cortex API request format
@@ -163,17 +171,29 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
         { type: "sql" }
       >
     >,
+    sqlResults: Annotation<SQLExecutionResult>,
+    tenantContext: Annotation<{
+      tenantId?: string;
+      userId?: string;
+      sessionId?: string;
+      segmentationApplied: boolean;
+      allowedTables?: string[];
+    }>,
+    session: Annotation<ConversationSession>,
   });
 
   constructor(
     private readonly httpService: HttpService,
     private jwtService: SnowflakeJwtService,
+    private readonly sqlService: SnowflakeSQLService,
+    @Inject(agentSnowflakeCortexConfig.KEY)
+    private readonly config: ConfigType<typeof agentSnowflakeCortexConfig>,
   ) {
     super();
     // Set auth via an interceptor so the token is updated on every call (if required)
     httpService.axiosRef.interceptors.request.use(
       (config) => {
-        const token = jwtService.getJwt();
+        const token = this.jwtService.getJwt();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
           config.headers["X-Snowflake-Authorization-Token-Type"] =
@@ -300,17 +320,171 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
 
   private addTenantSegmentationNode: typeof this.stateDefinition.Node = (
     state,
-  ) => {
-    this.logger.debug("Start Tenant Segmentation");
-    return state;
+  ): typeof this.stateDefinition.Update => {
+    this.logger.debug("Starting tenant segmentation");
+
+    if (!state.sql) {
+      this.logger.warn("No SQL statement found for segmentation");
+      return state;
+    }
+
+    try {
+      // Extract tenant context from session
+
+      const tenantContext: TenantContext = {
+        tenantId: "", //TODO: get from state
+      };
+
+      this.logger.debug("Tenant context extracted", {
+        tenantId: tenantContext.tenantId,
+      });
+
+      const segmentedSqlStatement =
+        this.sqlService.applySegmentationToStatement(
+          state.sql.statement,
+          tenantContext,
+        );
+
+      return {
+        sql: {
+          ...state.sql,
+          statement: segmentedSqlStatement,
+        },
+        tenantContext: {
+          ...tenantContext,
+          segmentationApplied: true,
+        },
+      };
+    } catch (error) {
+      this.logger.error("Tenant segmentation failed", {
+        error: error instanceof Error ? error.message : "Unknown error",
+        sqlPresent: !!state.sql,
+      });
+
+      // Continue without segmentation but log the issue
+      return {
+        ...state,
+        tenantContext: {
+          segmentationApplied: false,
+        },
+      };
+    }
   };
 
-  private executeSnowflakeSQLNode: typeof this.stateDefinition.Node = (
+  private executeSnowflakeSQLNode: typeof this.stateDefinition.Node = async (
     state,
   ) => {
-    this.logger.debug("Start Sql Execution");
-    return state;
+    this.logger.debug("Starting SQL execution");
+
+    if (!state.sql) {
+      this.logger.warn("No SQL statement found for execution");
+      return state;
+    }
+
+    try {
+      this.logger.debug("Executing SQL with tenant context");
+
+      // Execute SQL with tenant isolation using config values
+      const sqlResults = await this.sqlService.executeSQL(state.sql.statement);
+
+      this.logger.log("SQL execution completed", {
+        success: sqlResults.success,
+        rowCount: sqlResults.rowCount,
+        executionTime: sqlResults.executionTime,
+      });
+
+      // Update messages with SQL results
+      const resultsMessage = this.formatSQLResultsAsAiMessage(sqlResults);
+
+      const newMessages = [...state.messages];
+      if (resultsMessage) {
+        newMessages.push(resultsMessage);
+      }
+
+      return {
+        ...state,
+        sqlResults,
+        messages: newMessages,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+
+      this.logger.error("SQL execution failed", {
+        error: errorMessage,
+        tenantId: state.tenantContext?.tenantId,
+        sqlPresent: !!state.sql,
+      });
+
+      // Create error result
+      const errorResult: SQLExecutionResult = {
+        data: [],
+        metadata: { numRows: 0, format: "json", rowType: [] },
+        executionTime: 0,
+        rowCount: 0,
+        success: false,
+        error: errorMessage,
+      };
+
+      // Add error message to conversation
+      const errorAIMessage = new AIMessage(
+        `⚠️ **SQL Execution Error:** ${errorMessage}\n\nI apologize, but I couldn't execute the SQL query. Please try rephrasing your question or contact support if the issue persists.`,
+      );
+
+      return {
+        ...state,
+        sqlResults: errorResult,
+        messages: [...state.messages, errorAIMessage],
+      };
+    }
   };
+
+  /**
+   * Enhance messages with SQL execution results
+   */
+  private formatSQLResultsAsAiMessage(
+    sqlResults: SQLExecutionResult,
+  ): AIMessage | undefined {
+    if (!sqlResults.success || !sqlResults.formattedResults) {
+      return;
+    }
+
+    // Create enhanced content with SQL results
+    const textContent: string[] = [];
+    textContent.push(`**Query Results:**
+${sqlResults.formattedResults.tableFormat}
+`);
+
+    textContent.push(`*${sqlResults.formattedResults.summaryText}*`);
+
+    if (
+      sqlResults.formattedResults.insights &&
+      sqlResults.formattedResults.insights.length > 0
+    ) {
+      const insights = sqlResults.formattedResults.insights
+        .map((insight) => `• ${insight}`)
+        .join("\n");
+      textContent.push(`**Key Insights:**\n${insights}`);
+    }
+
+    // Create new enhanced message
+    const aiMessage = new AIMessage({
+      content: textContent.map((item) => ({ type: "text", text: item })),
+      response_metadata: {
+        sql_execution: {
+          success: sqlResults.success,
+          rowCount: sqlResults.rowCount,
+          executionTime: sqlResults.executionTime,
+        },
+      },
+      additional_kwargs: {
+        source_agent: this.agentId,
+        sql_results: sqlResults,
+      },
+    });
+
+    return aiMessage;
+  }
 
   /**
    * Safely convert message content to string

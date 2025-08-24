@@ -134,7 +134,7 @@ you MAY NOT use any heading syntax`,
             });
           }
         }
-
+        this.logger.debug("sayArgs", sayArgs);
         await args.say(sayArgs);
       }
       this.logger.log(`Successfully processed message.`);

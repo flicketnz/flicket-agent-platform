@@ -86,6 +86,7 @@ export class CortexController {
       const agentInput: Record<string, any> = {
         messages: langchainMessages,
         session,
+        context: request.context,
         systemPrompt: request.systemPrompt,
         metadata: {
           requestId: `cortex-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

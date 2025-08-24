@@ -1,6 +1,5 @@
 import {
   HumanMessage,
-  isBaseMessage,
   MessageContentText,
   SystemMessage,
 } from "@langchain/core/messages";
@@ -21,6 +20,10 @@ import {
   AgentInvocationResult,
   AgentRegistryService,
 } from "../../agents";
+import {
+  type CheckpointerPort,
+  InjectCheckpointer,
+} from "../../llm-storage/ports/checkpointer.port";
 import {
   InjectPrimaryChatModel,
   type PrimaryChatModelPort,
@@ -109,12 +112,18 @@ export class GraphOrchestratorService {
     routingReasoning: Annotation<string | undefined>(),
     alternativeAgents: Annotation<string[] | undefined>(),
 
-    result: Annotation<AgentInvocationResult | undefined>(),
-
     routingContext: Annotation<RoutingContext | undefined>(),
     systemPrompt: Annotation<string | undefined>(),
 
-    metadata: Annotation<Record<string, any>>(),
+    metadata: Annotation<Record<string, any>>({
+      reducer: (exitingMetadata, newMetadata) => {
+        return {
+          ...exitingMetadata,
+          ...newMetadata,
+        };
+      },
+      default: undefined,
+    }),
 
     /**
      * Contextual data specifically for the agent that is being invoked
@@ -134,6 +143,8 @@ export class GraphOrchestratorService {
     private readonly agentRegistry: AgentRegistryService,
     @InjectPrimaryChatModel()
     private readonly primaryChatModel: PrimaryChatModelPort,
+    @InjectCheckpointer()
+    private readonly checkpointer: CheckpointerPort,
   ) {}
 
   /**
@@ -156,19 +167,38 @@ export class GraphOrchestratorService {
 
       // Add nodes
       .addNode("router", this.routerNode.bind(this))
-      .addNode("primary_agent", this.primaryAgentNode.bind(this))
-      .addNode("specific_agent", this.specificAgentNode.bind(this))
 
       // Add edges
-      .addEdge(START, "router")
-      .addConditionalEdges("router", this.routingDecision.bind(this), {
-        primary_agent: "primary_agent",
-        specific_agent: "specific_agent",
-      })
-      .addEdge("primary_agent", END)
-      .addEdge("specific_agent", END);
+      .addConditionalEdges(
+        START,
+        this.checkForExistingConversationEdge.bind(this),
+      )
+      .addConditionalEdges("router", this.routingDecision.bind(this));
 
-    return workflow.compile();
+    // Establish each agent as a node, and add a edge to route to END
+    this.agentRegistry.getAllAgents().forEach((agent, agentId) => {
+      workflow.addNode(agentId, agent.getGraph());
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      workflow.addEdge(agentId as any, END);
+    });
+
+    return workflow.compile({ checkpointer: this.checkpointer.instance });
+  }
+
+  /**
+   * Returns node names - 'router' is the default, but if a specific agentId has previously been set (i.e. a past turn) then return that to short circuit and jump straight to the node
+   * @param state
+   * @returns {string}
+   */
+  private checkForExistingConversationEdge(
+    state: typeof this.stateDefinition.State,
+  ) {
+    this.logger.debug(state);
+    this.logger.debug("checkForExistingConversationEdge state above");
+    if (state.selectedAgentId) {
+      return state.selectedAgentId;
+    }
+    return "router";
   }
 
   /**
@@ -186,7 +216,7 @@ export class GraphOrchestratorService {
         throw new Error("No agents available for routing");
       }
 
-      // If only one agent is available (likely primary), route to it
+      // If only one agent is available, route to it
       if (availableAgents.length === 1) {
         const agent = availableAgents[0];
         return {
@@ -207,162 +237,167 @@ export class GraphOrchestratorService {
     } catch (error) {
       this.logger.error("Router node failed", error);
 
-      // Fallback to primary agent
-      const primaryAgent = this.agentRegistry.getPrimaryAgent();
-      if (!primaryAgent) {
-        throw new Error("Router failed and no primary agent available");
-      }
+      throw error;
 
-      return {
-        selectedAgentId: primaryAgent.agentId,
-        routingReasoning: `Fallback to primary agent due to routing error: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        alternativeAgents: [],
-      };
+      // return {
+      //   selectedAgentId: primaryAgent.agentId,
+      //   routingReasoning: `Fallback to primary agent due to routing error: ${
+      //     error instanceof Error ? error.message : "Unknown error"
+      //   }`,
+      //   alternativeAgents: [],
+      // };
     }
   }
 
-  /**
-   * Primary agent node that invokes the primary agent's graph
-   */
-  private async primaryAgentNode(
-    state: typeof this.stateDefinition.State,
-  ): Promise<typeof this.stateDefinition.Update> {
-    this.logger.debug("Executing primary agent node");
+  // /**
+  //  * Primary agent node that invokes the primary agent's graph
+  //  */
+  // private async primaryAgentNode(
+  //   state: typeof this.stateDefinition.State,
+  // ): Promise<typeof this.stateDefinition.Update> {
+  //   this.logger.debug("Executing primary agent node");
 
-    const primaryAgent = this.agentRegistry.getPrimaryAgent();
-    if (!primaryAgent) {
-      throw new Error("No primary agent found");
-    }
+  //   const primaryAgent = this.agentRegistry.getPrimaryAgent();
+  //   if (!primaryAgent) {
+  //     throw new Error("No primary agent found");
+  //   }
 
-    const result = await this.invokeAgentGraph(primaryAgent.agentId, state);
+  //   const result = await this.invokeAgentGraph(primaryAgent.agentId, state);
 
-    return {
-      result,
-    };
-  }
+  //   return {
+  //     result,
+  //   };
+  // }
 
   /**
    * Specific agent node that invokes a selected agent's graph
    */
-  private async specificAgentNode(
-    state: typeof this.stateDefinition.State,
-  ): Promise<typeof this.stateDefinition.Update> {
-    this.logger.debug(
-      `Executing specific agent node for: ${state.selectedAgentId}`,
-    );
+  // private async specificAgentNode(
+  //   state: typeof this.stateDefinition.State,
+  // ): Promise<typeof this.stateDefinition.Update> {
+  //   this.logger.debug(
+  //     `Executing specific agent node for: ${state.selectedAgentId}`,
+  //   );
 
-    if (!state.selectedAgentId) {
-      throw new Error("No agent selected for specific agent node");
-    }
+  //   if (!state.selectedAgentId) {
+  //     throw new Error("No agent selected for specific agent node");
+  //   }
 
-    const result = await this.invokeAgentGraph(state.selectedAgentId, state);
+  //   const result = await this.invokeAgentGraph(state.selectedAgentId, state);
 
-    return {
-      result,
-    };
-  }
+  //   return {
+  //     result,
+  //   };
+  // }
 
+  // /**
+  //  * Routing decision function that determines which path to take
+  //  */
+  // private routingDecision(
+  //   state: typeof this.stateDefinition.State,
+  // ): "primary_agent" | "specific_agent" {
+  //   if (!state.selectedAgentId) {
+  //     throw new Error("No agent selected in routing decision");
+  //   }
+
+  //   const primaryAgent = this.agentRegistry.getPrimaryAgent();
+  //   const isPrimaryAgent = primaryAgent?.agentId === state.selectedAgentId;
+
+  //   this.logger.debug(
+  //     `Routing to: ${isPrimaryAgent ? "primary_agent" : "specific_agent"} (${state.selectedAgentId})`,
+  //   );
+
+  //   return isPrimaryAgent ? "primary_agent" : "specific_agent";
+  // }
   /**
    * Routing decision function that determines which path to take
    */
-  private routingDecision(
-    state: typeof this.stateDefinition.State,
-  ): "primary_agent" | "specific_agent" {
+  private routingDecision(state: typeof this.stateDefinition.State): string {
     if (!state.selectedAgentId) {
       throw new Error("No agent selected in routing decision");
     }
-
-    const primaryAgent = this.agentRegistry.getPrimaryAgent();
-    const isPrimaryAgent = primaryAgent?.agentId === state.selectedAgentId;
-
-    this.logger.debug(
-      `Routing to: ${isPrimaryAgent ? "primary_agent" : "specific_agent"} (${state.selectedAgentId})`,
-    );
-
-    return isPrimaryAgent ? "primary_agent" : "specific_agent";
+    return state.selectedAgentId;
   }
 
-  /**
-   * Invoke an agent's graph and collect the result
-   */
-  private async invokeAgentGraph(
-    agentId: string,
-    state: typeof this.stateDefinition.State,
-  ): Promise<AgentInvocationResult> {
-    this.logger.debug(`Invoking agent graph: ${agentId}`);
+  // /**
+  //  * Invoke an agent's graph and collect the result
+  //  */
+  // private async invokeAgentGraph(
+  //   agentId: string,
+  //   state: typeof this.stateDefinition.State,
+  // ): Promise<AgentInvocationResult> {
+  //   this.logger.debug(`Invoking agent graph: ${agentId}`);
 
-    const agent = this.agentRegistry.getAgent(agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
-    }
+  //   const agent = this.agentRegistry.getAgent(agentId);
+  //   if (!agent) {
+  //     throw new Error(`Agent not found: ${agentId}`);
+  //   }
 
-    try {
-      const startTime = Date.now();
+  //   try {
+  //     const startTime = Date.now();
 
-      // Prepare input for the agent graph
-      const agentInput: Record<string, any> = {
-        messages: state.messages,
-        session: state.session,
-        metadata: state.metadata,
-        context: state.context,
+  //     // Prepare input for the agent graph
+  //     const agentInput: Record<string, any> = {
+  //       messages: state.messages,
+  //       session: state.session,
+  //       metadata: state.metadata,
+  //       context: state.context,
 
-        // the following properties are context that are expected by the prompt that is built in the primary agent
-        // TODO: feels like a code smell having to set these variables here
-        humanName: state.invoker?.name,
-        currentDateIso: state.invoker?.currentDateIso,
-        currentTimezone: state.invoker?.timezone,
-        systemPrompt: state.systemPrompt,
-      } satisfies AgentInvocationInput & Record<string, any>;
+  //       // The following properties are context that are expected by the prompt that is built in the primary agent
+  //       // TODO: feels like a code smell having to set these variables here
+  //       // humanName: state.invoker?.name,
+  //       // currentDateIso: state.invoker?.currentDateIso,
+  //       // currentTimezone: state.invoker?.timezone,
+  //       // systemPrompt: state.systemPrompt,
+  //     } satisfies AgentInvocationInput & Record<string, any>;
 
-      // Invoke the agent's graph
-      const graphResult = await agent.getGraph().invoke(agentInput, {
-        configurable: {
-          thread_id: state.session.threadId,
-        },
-      });
+  //     // Invoke the agent's graph
+  //     const graphResult = await agent.getGraph().invoke(agentInput, {
+  //       configurable: {
+  //         thread_id: state.session.threadId,
+  //       },
+  //     });
 
-      const duration = Date.now() - startTime;
+  //     const duration = Date.now() - startTime;
 
-      this.logger.debug(`Agent ${agentId} completed in ${duration}ms`);
+  //     this.logger.debug(`Agent ${agentId} completed in ${duration}ms`);
 
-      // Extract the result from the graph state
-      // The exact structure depends on how the agent graphs are implemented
-      // For now, we'll assume the graph returns the result in a standard format
-      const result: AgentInvocationResult = {
-        messages:
-          "messages" in graphResult &&
-          Array.isArray(graphResult.messages) &&
-          graphResult.messages.every(isBaseMessage)
-            ? graphResult.messages
-            : [],
-        success: true,
-        metadata: {
-          ...("metadata" in graphResult &&
-          typeof graphResult.metadata === "object"
-            ? graphResult.metadata
-            : {}),
-          duration,
-          agentId,
-        },
-      };
+  //     // Extract the result from the graph state
+  //     // The exact structure depends on how the agent graphs are implemented
+  //     // For now, we'll assume the graph returns the result in a standard format
+  //     const result: AgentInvocationResult = {
+  //       messages:
+  //         "messages" in graphResult &&
+  //         Array.isArray(graphResult.messages) &&
+  //         graphResult.messages.every(isBaseMessage)
+  //           ? graphResult.messages
+  //           : [],
+  //       success: true,
+  //       metadata: {
+  //         ...("metadata" in graphResult &&
+  //         typeof graphResult.metadata === "object"
+  //           ? graphResult.metadata
+  //           : {}),
+  //         duration,
+  //         agentId,
+  //       },
+  //     };
 
-      return result;
-    } catch (error) {
-      this.logger.error(`Agent ${agentId} invocation failed`, error);
+  //     return result;
+  //   } catch (error) {
+  //     this.logger.error(`Agent ${agentId} invocation failed`, error);
 
-      return {
-        messages: [],
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-        metadata: {
-          agentId,
-          error: true,
-        },
-      };
-    }
-  }
+  //     return {
+  //       messages: [],
+  //       success: false,
+  //       error: error instanceof Error ? error.message : "Unknown error",
+  //       metadata: {
+  //         agentId,
+  //         error: true,
+  //       },
+  //     };
+  //   }
+  // }
 
   /**
    * Analyze required capability using LLM to determine best agent match
@@ -408,8 +443,6 @@ export class GraphOrchestratorService {
         responseText = response.content;
       }
 
-      this.logger.debug(`LLM response: ${responseText}`);
-
       // Parse the LLM response
       const analysis = this.parseLLMAnalysisResponse(
         responseText,
@@ -426,19 +459,14 @@ export class GraphOrchestratorService {
         "Failed to analyze capability with LLM, falling back to primary agent",
         error instanceof Error ? error.stack : undefined,
       );
+      throw error;
 
-      // Fallback to primary agent
-      const primaryAgent = this.agentRegistry.getPrimaryAgent();
-      if (!primaryAgent) {
-        throw new Error("LLM analysis failed and no primary agent available");
-      }
-
-      return {
-        recommendedAgentId: primaryAgent.agentId,
-        reasoning: "Fallback to primary agent due to LLM analysis failure",
-        alternatives: [],
-        confidence: 0.5,
-      };
+      // return {
+      //   recommendedAgentId: primaryAgent.agentId,
+      //   reasoning: "Fallback to primary agent due to LLM analysis failure",
+      //   alternatives: [],
+      //   confidence: 0.5,
+      // };
     }
   }
 
@@ -615,6 +643,8 @@ Choose the agent that best matches the user's needs and provide clear reasoning.
 
   /**
    * Main orchestration method that processes requests using the LangGraph
+   *
+   * This method orchestrates all the agents together into a super agent :-D
    */
   async orchestrateResponse(
     input: GraphOrchestrationInput,
@@ -635,35 +665,31 @@ Choose the agent that best matches the user's needs and provide clear reasoning.
         metadata: input.metadata || {},
         selectedAgentId: undefined,
         alternativeAgents: undefined,
-        result: undefined,
         routingReasoning: undefined,
         context: undefined,
         invoker: input.invoker,
       };
 
       // Invoke the orchestration graph
-      const finalState = (await graph!.invoke(
-        initialState,
-      )) as typeof this.stateDefinition.State;
+      const finalState = (await graph!.invoke(initialState, {
+        subgraphs: false,
+        configurable: { thread_id: input.session.threadId },
+      })) as typeof this.stateDefinition.State;
 
       const duration = Date.now() - startTime;
-
-      if (!finalState.result) {
-        throw new Error("Orchestration graph did not produce a result");
-      }
 
       this.logger.debug(
         `Graph orchestration completed in ${duration}ms using agent: ${finalState.selectedAgentId}`,
       );
 
       return {
-        ...finalState.result,
-
+        messages: finalState.messages,
+        success: true,
         invokedAgentId: finalState.selectedAgentId || "unknown",
         selectionReasoning: finalState.routingReasoning,
         alternativeAgents: finalState.alternativeAgents,
         metadata: {
-          ...finalState.result.metadata,
+          // ...finalState.result.metadata,
           orchestrationDuration: duration,
         },
       };

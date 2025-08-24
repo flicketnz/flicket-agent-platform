@@ -38,8 +38,6 @@ export class LlmService {
     const orchestrationResult =
       await this.graphOrchestrator.orchestrateResponse(agentInput);
 
-    this.logger.debug("Orchestration result", { orchestrationResult });
-
     // Convert the result to maintain backward compatibility
     // The existing interface expects the agent result format, so we return the messages
     return {

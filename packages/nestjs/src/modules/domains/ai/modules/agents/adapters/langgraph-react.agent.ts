@@ -10,6 +10,7 @@ import {
 } from "@langchain/langgraph/prebuilt";
 import { Injectable, Logger } from "@nestjs/common";
 import { DiscoveryService } from "@nestjs/core";
+import { Prompt } from "node_modules/@langchain/langgraph/dist/prebuilt/react_agent_executor";
 
 import {
   type CheckpointerPort,
@@ -42,10 +43,10 @@ export class LangGraphReactAgentAdapter extends GraphAgentPort {
   public readonly stateDefinition = Annotation.Root({
     // ...MessagesAnnotation.spec,
     ...createReactAgentAnnotation().spec,
-    humanName: Annotation<string>(),
-    currentDateIso: Annotation<string>(),
-    currentTimezone: Annotation<string>(),
-    systemPrompt: Annotation<string>(),
+    // humanName: Annotation<string>(),
+    // currentDateIso: Annotation<string>(),
+    // currentTimezone: Annotation<string>(),
+    // systemPrompt: Annotation<string>(),
   });
 
   constructor(
@@ -92,12 +93,28 @@ export class LangGraphReactAgentAdapter extends GraphAgentPort {
     return this.defaultTools;
   }
 
-  private getPrompt() {
+  private getPrompt(): Prompt {
     const builtPrompt = ChatPromptTemplate.fromTemplate(
       this.prompts.systemPrompt,
     );
 
-    return builtPrompt;
+    // override the state type - as we need to update this agent state to contain the parent state definition as well
+    return async (state: Record<string, any>) => {
+      this.logger.debug(state);
+      this.logger.debug("prompt builder");
+      const p = await builtPrompt.formatMessages({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        humanName: state.invoker?.name,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        currentDateIso: state.invoker?.currentDateIso,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        currentTimezone: state.invoker?.timezone,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        systemPrompt: state.systemPrompt,
+      });
+      this.logger.debug(p);
+      return p;
+    };
   }
 
   public getGraph() {
@@ -115,7 +132,7 @@ export class LangGraphReactAgentAdapter extends GraphAgentPort {
       // TODO: with these uncommented, we cant call tools successfully. i suspect an issue with missing state but can't confirm, yet.
       // prompt: this.getPrompt(),
       // stateSchema: this.stateDefinition,
-      checkpointSaver: this.checkpointerAdapter.instance,
+      // checkpointSaver: this.checkpointerAdapter.instance,
     });
 
     this.logger.log(

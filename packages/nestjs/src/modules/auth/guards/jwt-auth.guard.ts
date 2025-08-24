@@ -72,7 +72,10 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     // Check if the authorization header follows the Bearer token format
-    const [type, token] = authorization.split(" ") ?? [];
+    const [type, ...rest] = authorization.split(" ") ?? [];
+
+    // grab the lsat segment - which will be the token
+    const token = rest[rest.length - 1];
 
     if (type !== "Bearer") {
       this.logger.warn(

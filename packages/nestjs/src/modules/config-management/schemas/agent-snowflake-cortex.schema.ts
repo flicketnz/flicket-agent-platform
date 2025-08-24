@@ -37,4 +37,37 @@ export const agentSnowflakeCortexSchema = Joi.object({
       otherwise: Joi.string().optional(),
     })
     .description("Snowflake account identifier"),
+
+  AGENT_SNOWFLAKE_CORTEX_SQL_MAX_EXECUTION_TIME_SECONDS: Joi.any()
+    .when("AGENT_SNOWFLAKE_CORTEX_ENABLED", {
+      is: true,
+      then: Joi.string().required(),
+      otherwise: Joi.string().optional(),
+    })
+    .description(
+      "Max time in seconds that the rest api to execute the SQL statement will run for",
+    ),
+
+  AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_WAREHOUSE: Joi.any()
+    .when("AGENT_SNOWFLAKE_CORTEX_ENABLED", {
+      is: true,
+      then: Joi.string().required().default("COMPUTE_WH"),
+      otherwise: Joi.string().optional(),
+    })
+    .description("Warehouse to run SQL Queries in"),
+
+  AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_DATABASE: Joi.any()
+    .when("AGENT_SNOWFLAKE_CORTEX_ENABLED", {
+      is: true,
+      then: Joi.string().required(),
+      otherwise: Joi.string().optional(),
+    })
+    .description("Snowflake account identifier"),
+  AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_SCHEMA: Joi.any()
+    .when("AGENT_SNOWFLAKE_CORTEX_ENABLED", {
+      is: true,
+      then: Joi.string().required(),
+      otherwise: Joi.string().optional(),
+    })
+    .description("Snowflake account identifier"),
 });
