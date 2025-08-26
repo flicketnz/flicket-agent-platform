@@ -5,6 +5,7 @@ import { Message } from "nestjs-slack-bolt";
 import { SlackService } from "nestjs-slack-bolt/dist/services/slack.service";
 
 import { LlmConversationQuery } from "../../../../common/queries/llm-conversation.query";
+import { SlackFormatter } from "./formatter.service";
 
 @Controller("slack")
 export class SlackEntrypointController {
@@ -13,6 +14,7 @@ export class SlackEntrypointController {
   constructor(
     private readonly queryBus: QueryBus,
     private slackService: SlackService,
+    private slackFormatter: SlackFormatter,
   ) {}
 
   // Handle _any_ Message event :-/
@@ -110,6 +112,10 @@ you MAY NOT use any heading syntax`,
           channel: args.message.channel,
           thread_ts: threadTs,
           blocks: [],
+          username:
+            (response.additional_kwargs.source_agent_name as
+              | string
+              | undefined) ?? undefined,
         };
 
         for (const messageContent of response.content) {
@@ -117,13 +123,11 @@ you MAY NOT use any heading syntax`,
             if (sayArgs.text === undefined) {
               sayArgs.text = messageContent.text as string;
             }
-            sayArgs.blocks.push({
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: messageContent.text as string,
-              },
-            });
+            sayArgs.blocks.push(
+              ...(await this.slackFormatter.parse(
+                messageContent.text as string,
+              )),
+            );
           } else if (messageContent.type === "image_url") {
             sayArgs.blocks.push({
               type: "image",
@@ -134,7 +138,7 @@ you MAY NOT use any heading syntax`,
             });
           }
         }
-        this.logger.debug("sayArgs", sayArgs);
+
         await args.say(sayArgs);
       }
       this.logger.log(`Successfully processed message.`);

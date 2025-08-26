@@ -193,10 +193,21 @@ export class GraphOrchestratorService {
   private checkForExistingConversationEdge(
     state: typeof this.stateDefinition.State,
   ) {
-    this.logger.debug(state);
-    this.logger.debug("checkForExistingConversationEdge state above");
     if (state.selectedAgentId) {
       return state.selectedAgentId;
+    }
+    // Get latest assistant message, check if it has a source_agent, and use that to route
+    if (state.messages.length > 0) {
+      const lastAiMessage = state.messages.findLast(
+        (m) => m.getType() === "ai",
+      );
+      if (
+        lastAiMessage &&
+        "source_agent" in lastAiMessage.additional_kwargs &&
+        typeof lastAiMessage.additional_kwargs.source_agent === "string"
+      ) {
+        return lastAiMessage.additional_kwargs.source_agent;
+      }
     }
     return "router";
   }
@@ -238,77 +249,9 @@ export class GraphOrchestratorService {
       this.logger.error("Router node failed", error);
 
       throw error;
-
-      // return {
-      //   selectedAgentId: primaryAgent.agentId,
-      //   routingReasoning: `Fallback to primary agent due to routing error: ${
-      //     error instanceof Error ? error.message : "Unknown error"
-      //   }`,
-      //   alternativeAgents: [],
-      // };
     }
   }
 
-  // /**
-  //  * Primary agent node that invokes the primary agent's graph
-  //  */
-  // private async primaryAgentNode(
-  //   state: typeof this.stateDefinition.State,
-  // ): Promise<typeof this.stateDefinition.Update> {
-  //   this.logger.debug("Executing primary agent node");
-
-  //   const primaryAgent = this.agentRegistry.getPrimaryAgent();
-  //   if (!primaryAgent) {
-  //     throw new Error("No primary agent found");
-  //   }
-
-  //   const result = await this.invokeAgentGraph(primaryAgent.agentId, state);
-
-  //   return {
-  //     result,
-  //   };
-  // }
-
-  /**
-   * Specific agent node that invokes a selected agent's graph
-   */
-  // private async specificAgentNode(
-  //   state: typeof this.stateDefinition.State,
-  // ): Promise<typeof this.stateDefinition.Update> {
-  //   this.logger.debug(
-  //     `Executing specific agent node for: ${state.selectedAgentId}`,
-  //   );
-
-  //   if (!state.selectedAgentId) {
-  //     throw new Error("No agent selected for specific agent node");
-  //   }
-
-  //   const result = await this.invokeAgentGraph(state.selectedAgentId, state);
-
-  //   return {
-  //     result,
-  //   };
-  // }
-
-  // /**
-  //  * Routing decision function that determines which path to take
-  //  */
-  // private routingDecision(
-  //   state: typeof this.stateDefinition.State,
-  // ): "primary_agent" | "specific_agent" {
-  //   if (!state.selectedAgentId) {
-  //     throw new Error("No agent selected in routing decision");
-  //   }
-
-  //   const primaryAgent = this.agentRegistry.getPrimaryAgent();
-  //   const isPrimaryAgent = primaryAgent?.agentId === state.selectedAgentId;
-
-  //   this.logger.debug(
-  //     `Routing to: ${isPrimaryAgent ? "primary_agent" : "specific_agent"} (${state.selectedAgentId})`,
-  //   );
-
-  //   return isPrimaryAgent ? "primary_agent" : "specific_agent";
-  // }
   /**
    * Routing decision function that determines which path to take
    */
@@ -318,86 +261,6 @@ export class GraphOrchestratorService {
     }
     return state.selectedAgentId;
   }
-
-  // /**
-  //  * Invoke an agent's graph and collect the result
-  //  */
-  // private async invokeAgentGraph(
-  //   agentId: string,
-  //   state: typeof this.stateDefinition.State,
-  // ): Promise<AgentInvocationResult> {
-  //   this.logger.debug(`Invoking agent graph: ${agentId}`);
-
-  //   const agent = this.agentRegistry.getAgent(agentId);
-  //   if (!agent) {
-  //     throw new Error(`Agent not found: ${agentId}`);
-  //   }
-
-  //   try {
-  //     const startTime = Date.now();
-
-  //     // Prepare input for the agent graph
-  //     const agentInput: Record<string, any> = {
-  //       messages: state.messages,
-  //       session: state.session,
-  //       metadata: state.metadata,
-  //       context: state.context,
-
-  //       // The following properties are context that are expected by the prompt that is built in the primary agent
-  //       // TODO: feels like a code smell having to set these variables here
-  //       // humanName: state.invoker?.name,
-  //       // currentDateIso: state.invoker?.currentDateIso,
-  //       // currentTimezone: state.invoker?.timezone,
-  //       // systemPrompt: state.systemPrompt,
-  //     } satisfies AgentInvocationInput & Record<string, any>;
-
-  //     // Invoke the agent's graph
-  //     const graphResult = await agent.getGraph().invoke(agentInput, {
-  //       configurable: {
-  //         thread_id: state.session.threadId,
-  //       },
-  //     });
-
-  //     const duration = Date.now() - startTime;
-
-  //     this.logger.debug(`Agent ${agentId} completed in ${duration}ms`);
-
-  //     // Extract the result from the graph state
-  //     // The exact structure depends on how the agent graphs are implemented
-  //     // For now, we'll assume the graph returns the result in a standard format
-  //     const result: AgentInvocationResult = {
-  //       messages:
-  //         "messages" in graphResult &&
-  //         Array.isArray(graphResult.messages) &&
-  //         graphResult.messages.every(isBaseMessage)
-  //           ? graphResult.messages
-  //           : [],
-  //       success: true,
-  //       metadata: {
-  //         ...("metadata" in graphResult &&
-  //         typeof graphResult.metadata === "object"
-  //           ? graphResult.metadata
-  //           : {}),
-  //         duration,
-  //         agentId,
-  //       },
-  //     };
-
-  //     return result;
-  //   } catch (error) {
-  //     this.logger.error(`Agent ${agentId} invocation failed`, error);
-
-  //     return {
-  //       messages: [],
-  //       success: false,
-  //       error: error instanceof Error ? error.message : "Unknown error",
-  //       metadata: {
-  //         agentId,
-  //         error: true,
-  //       },
-  //     };
-  //   }
-  // }
 
   /**
    * Analyze required capability using LLM to determine best agent match
@@ -460,13 +323,6 @@ export class GraphOrchestratorService {
         error instanceof Error ? error.stack : undefined,
       );
       throw error;
-
-      // return {
-      //   recommendedAgentId: primaryAgent.agentId,
-      //   reasoning: "Fallback to primary agent due to LLM analysis failure",
-      //   alternatives: [],
-      //   confidence: 0.5,
-      // };
     }
   }
 
@@ -689,7 +545,6 @@ Choose the agent that best matches the user's needs and provide clear reasoning.
         selectionReasoning: finalState.routingReasoning,
         alternativeAgents: finalState.alternativeAgents,
         metadata: {
-          // ...finalState.result.metadata,
           orchestrationDuration: duration,
         },
       };

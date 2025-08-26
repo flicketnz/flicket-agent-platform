@@ -4,6 +4,7 @@ import { ModuleRef } from "@nestjs/core";
 import { SlackModule } from "nestjs-slack-bolt";
 import slackConfig from "src/modules/config-management/configs/slack.config";
 
+import { SlackFormatter } from "./formatter.service";
 import { SlackEntrypointController } from "./slack.controller";
 import { SlackReceiverController } from "./slack-receiver.controller";
 
@@ -38,7 +39,7 @@ import { SlackReceiverController } from "./slack-receiver.controller";
       },
     }),
   ],
-
+  providers: [SlackFormatter],
   controllers: [SlackEntrypointController, SlackReceiverController],
 })
 export class SlackEntryPointModule {}
