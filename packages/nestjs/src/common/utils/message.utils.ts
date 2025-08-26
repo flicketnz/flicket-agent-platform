@@ -6,7 +6,9 @@ import {
   SystemMessage,
 } from "@langchain/core/messages";
 
-export const normalizeMessage = (message: BaseMessageLike) => {
+export const normalizeMessage = (
+  message: BaseMessageLike,
+): BaseMessage | HumanMessage | AIMessage | SystemMessage => {
   // If the message is already a LangChain class, just return it.
   if (message instanceof BaseMessage) {
     return message;

@@ -5,6 +5,7 @@ import {
   BaseMessage,
   BaseMessageLike,
   HumanMessage,
+  isAIMessage,
 } from "@langchain/core/messages";
 import {
   Annotation,
@@ -38,7 +39,7 @@ type SnowflakeCortexRequest = {
    * The prompt or conversation history to be used to generate a completion. An array of objects representing a conversation in chronological order. Each object must contain either the content key or the content_list key. It may also contain a role key.
    */
   messages: Array<{
-    role: "user" | "assistant" | "system";
+    role: "user" | "analyst";
     content: { type: "text"; text: string }[];
   }>;
 } & (
@@ -142,6 +143,7 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
   private readonly requestTimeout = 30000; // 30 seconds
 
   readonly agentId = "snowflake-cortex";
+  readonly agentName = "Snowflake Analyst";
 
   protected graph:
     | CompiledStateGraph<
@@ -257,8 +259,12 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
     const startTime = Date.now();
 
     try {
+      // filter messages in state to only those produced by a human, or produced by the cortex analyst service.
+      const filteredMessages = this.filterMessagesByCortexAnalystAndHuman(
+        state.messages,
+      );
       // Convert LangChain messages to Snowflake Cortex format
-      const cortexMessages = this.convertMessages(state.messages);
+      const cortexMessages = this.convertMessages(filteredMessages);
       this.logger.debug(cortexMessages);
       // Build request payload
       const requestPayload: SnowflakeCortexRequest = {
@@ -268,7 +274,10 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
           "@POSTGRES_SOURCE.NZ.SEMANTIC_MODEL_REVENUE_MODEL_STAGE/revenue.yaml", // TODO make configureable from config,
       };
 
-      this.logger.debug("Invoking Snowflake Cortex");
+      this.logger.debug(
+        "Invoking Snowflake Cortex ",
+        // requestPayload,
+      );
 
       // Make HTTP request to Snowflake Cortex
       const response = await firstValueFrom(
@@ -303,6 +312,8 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
       );
       if (isAxiosError(error)) {
         this.logger.error("axios response");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        this.logger.debug(error.response.data);
       }
 
       // Return an error message as part of the state
@@ -479,6 +490,7 @@ ${sqlResults.formattedResults.tableFormat}
       },
       additional_kwargs: {
         source_agent: this.agentId,
+        source_channel: "internal-enhancement" satisfies SourceChannel,
         sql_results: sqlResults,
       },
     });
@@ -489,14 +501,35 @@ ${sqlResults.formattedResults.tableFormat}
   /**
    * Safely convert message content to string
    */
-  private messageContentToString(content: unknown): string {
+  private formatMessageContentForSnowflakeAnalyst(
+    content: unknown,
+  ): SnowflakeCortexRequest["messages"][number]["content"] {
     if (typeof content === "string") {
-      return content;
+      return [
+        {
+          type: "text",
+          text: content,
+        },
+      ];
     }
-    if (typeof content === "object" && content !== null) {
-      return JSON.stringify(content);
+    if (
+      Array.isArray(content) &&
+      content.length > 0 &&
+      content.some(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        (c) => typeof c == "object" && "type" in c && c.type === "text",
+      )
+    ) {
+      // it looks like its already in the snowflake structure needed - probably was produced by snowflake in the first place
+      return content as SnowflakeCortexRequest["messages"][number]["content"];
     }
-    return String(content);
+    // else make it safe and return it
+    return [
+      {
+        type: "text",
+        text: JSON.stringify(content),
+      },
+    ];
   }
 
   /**
@@ -505,35 +538,67 @@ ${sqlResults.formattedResults.tableFormat}
   private convertMessages(
     messages: BaseMessageLike[],
   ): SnowflakeCortexRequest["messages"] {
-    return messages
-      .map((message) => {
-        let role: "user" | "assistant" | "system";
+    const normalisedMessages = messages.map(normalizeMessage);
 
-        const normalizedMessage = normalizeMessage(message);
+    return (
+      normalisedMessages
+        .map((message, idx) => {
+          let role: SnowflakeCortexRequest["messages"][number]["role"];
 
-        this.logger.debug("normalised message", normalizedMessage);
-        this.logger.debug("type", normalizedMessage.getType());
+          // this.logger.debug("type", normalizedMessage.getType());
 
-        const messageRole = this.convertMessageTypeToCortex(
-          normalizedMessage.getType(),
-        );
+          const messageRole = this.convertMessageTypeToCortex(
+            message.getType(),
+          );
 
-        if (["user", "assistant", "system"].includes(messageRole)) {
-          role = messageRole as "user" | "assistant" | "system";
-        } else {
-          this.logger.error("Received an unexpected message role");
-          this.logger.debug(message);
-          return;
-        }
+          if ("user" == messageRole) {
+            role = messageRole;
+          } else if (
+            messageRole === "assistant" &&
+            message.additional_kwargs.source_role
+          ) {
+            role = message.additional_kwargs.source_role as "analyst"; // use the stored value - but we know its always going to be 'analyst'
+          } else {
+            this.logger.error("Received an unexpected message role");
+            this.logger.debug(message);
+            return;
+          }
 
-        const content = this.messageContentToString(normalizedMessage.content);
+          const content = this.formatMessageContentForSnowflakeAnalyst(
+            message.content,
+          );
 
-        return {
-          role,
-          content: [{ type: "text" as const, text: content }],
-        };
-      })
-      .filter((m) => !!m); // filter undefined's
+          return {
+            role,
+            content,
+          };
+        })
+        .filter((m) => !!m) // filter undefined's
+        // Cortex analyst fails if you send subsequent messages with the same role.
+        // the roles must change between messages. This can put is in odd position
+        // when the user sends many legitimate messages as a follow up to a cortex
+        // analyst produced message. This reduce, attempts to resolve that.
+        .reduce<SnowflakeCortexRequest["messages"]>((acc, message, idx) => {
+          this.logger.debug({
+            idx,
+            message,
+            acc,
+          });
+          if (
+            //not the first iteration (i.e. there wont be a previous message yet)
+            idx > 0 &&
+            // previous iteration was 'human' (which is resolved to 'user' for cortex analyst calls)
+            acc[acc.length - 1].role === "user" &&
+            // current iteration is 'human'
+            message.role === "user"
+          ) {
+            acc[acc.length - 1].content.push(...message.content);
+          } else {
+            acc.push(message);
+          }
+          return acc;
+        }, [])
+    );
   }
 
   /**
@@ -558,7 +623,9 @@ ${sqlResults.formattedResults.tableFormat}
           content,
           response_metadata: response.response_metadata,
           additional_kwargs: {
+            source_agent_name: this.agentName,
             source_agent: this.agentId,
+            source_channel: "snowflake-cortex" satisfies SourceChannel,
             source_role: response.message.role,
           },
         }),
@@ -567,6 +634,7 @@ ${sqlResults.formattedResults.tableFormat}
 
     return messages;
   }
+
   private convertMessageTypeToCortex(
     messageType: ReturnType<BaseMessage["getType"]>,
   ) {
@@ -581,4 +649,33 @@ ${sqlResults.formattedResults.tableFormat}
         return "unsupported";
     }
   }
+
+  private filterMessagesByCortexAnalystAndHuman(
+    messages: BaseMessageLike[],
+  ): BaseMessageLike[] {
+    return messages.filter((message) => {
+      const normalizedMessage = normalizeMessage(message);
+
+      // return all human messages
+      if (normalizedMessage.getType() === "human") {
+        return true;
+      }
+
+      //return Ai Messages produced by upstream cortex analyst
+      if (
+        isAIMessage(normalizedMessage) &&
+        normalizedMessage.additional_kwargs &&
+        typeof normalizedMessage.additional_kwargs == "object" &&
+        "source_agent" in normalizedMessage.additional_kwargs &&
+        "source_channel" in normalizedMessage.additional_kwargs &&
+        "source_role" in normalizedMessage.additional_kwargs &&
+        normalizedMessage.additional_kwargs.source_agent === this.agentId &&
+        (normalizedMessage.additional_kwargs
+          .source_channel as SourceChannel) === "snowflake-cortex"
+      )
+        return true;
+    });
+  }
 }
+
+type SourceChannel = "internal-enhancement" | "snowflake-cortex";

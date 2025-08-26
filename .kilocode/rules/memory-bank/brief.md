@@ -8,14 +8,14 @@
 where they can share common logic, and common interfaces, but still execute and
 run as independent Agents.
 
-**Target Audience:** The Agents will be consumed by internal flicket satffg
+**Target Audience:** The Agents will be consumed by internal flicket staff
 (primarily via the Slack ai assistant integration) this agent will have multi
 agent capabilities allowing it to call out to other agents as needed. Each
-additioanl agent will be directly callable, and will be primarily for dedicated
-tasks from within the flicket platform. The audiance for these will be event
-promoters, or potetnial event atendees
+additional agent will be directly callable, and will be primarily for dedicated
+tasks from within the flicket platform. The audience for these will be event
+promoters, or potential event attendees
 
 **Core Features & Scope:** Multi agent orchestration - a single agent for
-Flicket staff accessible via a conversation interface (the slack ai assistsatn
-integration) and mulitple dedicated agents for specific uses cases, integrated
-at point of consumption, forexample Flicket admin
+Flicket staff accessible via a conversation interface (the slack ai assistant
+integration) and multiple dedicated agents for specific uses cases, integrated
+at point of consumption, for example Flicket admin
