@@ -108,7 +108,7 @@ you MAY NOT use any heading syntax`,
         this.logger.debug(
           "Setting up slack blocks for a complex message return type",
         );
-        const sayArgs: SayArguments = {
+        const sayArgs: SayArguments & { attachments?: string } = {
           channel: args.message.channel,
           thread_ts: threadTs,
           blocks: [],
@@ -139,7 +139,30 @@ you MAY NOT use any heading syntax`,
           }
         }
 
-        await args.say(sayArgs);
+        // REMOVE TABLE BLOCKS (its not currently working)
+        sayArgs.blocks = sayArgs.blocks.filter((b) => b.type !== "table");
+
+        // UPLOAD FILE instead of attempting to render a table, upload the produced results as a csv file, and show it to the user
+        if (
+          response.additional_kwargs &&
+          response.additional_kwargs.sql_results &&
+          typeof response.additional_kwargs.sql_results === "object" &&
+          "data" in response.additional_kwargs.sql_results &&
+          Array.isArray(response.additional_kwargs.sql_results.data)
+        ) {
+          await this.slackService.client.files.uploadV2({
+            content: response.additional_kwargs.sql_results.data
+              .map((row: string[]) => row.map((cell) => `"${cell}" `).join(","))
+              .join("\n"),
+
+            channel_id: args.message.channel,
+            thread_ts: threadTs as string,
+            blocks: sayArgs.blocks,
+            filename: "results.csv",
+          });
+        } else {
+          await args.say(sayArgs);
+        }
       }
       this.logger.log(`Successfully processed message.`);
     } catch (error) {
@@ -151,7 +174,7 @@ you MAY NOT use any heading syntax`,
         "thread_ts" in args.message ? args.message.thread_ts : undefined;
 
       await args.say({
-        text: `Sorry, I encountered an error: ${errorMessage}`,
+        text: `Sorry, I encountered an error: ${errorMessage}\n\nYou may have some success if you start a new chat`,
         thread_ts: threadTs,
       });
     }

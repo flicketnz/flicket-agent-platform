@@ -579,11 +579,6 @@ ${sqlResults.formattedResults.tableFormat}
         // when the user sends many legitimate messages as a follow up to a cortex
         // analyst produced message. This reduce, attempts to resolve that.
         .reduce<SnowflakeCortexRequest["messages"]>((acc, message, idx) => {
-          this.logger.debug({
-            idx,
-            message,
-            acc,
-          });
           if (
             //not the first iteration (i.e. there wont be a previous message yet)
             idx > 0 &&

@@ -34,4 +34,17 @@ export const CheckpointsSchema = new Schema({
   writeIdx: {
     type: Number,
   },
+  // splitting fields
+  isSplit: {
+    type: Boolean,
+  },
+  splitMetadata: {
+    type: Object,
+  },
+  messageSplitData: {
+    type: Object,
+  },
+  contentSplitData: {
+    type: Object,
+  },
 });

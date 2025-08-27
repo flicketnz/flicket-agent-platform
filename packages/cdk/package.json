@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "CDK deployment for Slack bot",
   "scripts": {
-    "build": "tsc",
     "cdk": "cdk"
   },
   "devDependencies": {

@@ -22,7 +22,8 @@ WORKDIR /app
 # COPY package*.json ./
 
 # Install dependencies - using docker cache
-RUN --mount=type=cache,target=/npm-cache \
+RUN \
+    --mount=type=cache,target=/npm-cache \
     --mount=type=bind,source=package.json,target=/app/package.json \
     --mount=type=bind,source=package-lock.json,target=/app/package-lock.json \
     npm ci
@@ -35,8 +36,9 @@ COPY --chown=flicketai:nodejs .slack/ .slack/
 RUN \
     --mount=type=bind,source=package.json,target=/app/package.json \
     --mount=type=bind,source=tsconfig.json,target=/app/tsconfig.json \
+    --mount=type=bind,source=tsconfig.build.json,target=/app/tsconfig.build.json \
     --mount=type=bind,source=nest-cli.json,target=/app/nest-cli.json \
-    npm run build
+    NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 RUN --mount=type=bind,source=package.json,target=/app/package.json \
     npm prune --omit=dev

@@ -31,7 +31,8 @@
         "chat:write",
         "app_mentions:read",
         "users.profile:read",
-        "files:read"
+        "files:read",
+        "files:write"
       ]
     }
   },
