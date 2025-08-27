@@ -25,6 +25,14 @@ const buildId = (idPartial: `${Uppercase<string>}${string}`) =>
 export class FlicketSlackbotStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Apply tags to all resources in the stack
+    cdk.Tags.of(this).add("Project", "FlicketAgentPlatform");
+    cdk.Tags.of(this).add("Service", SERVICE_NAME);
+    cdk.Tags.of(this).add(
+      "Repo",
+      "http://github.com/flicketnz/flicket-agent-platform",
+    );
     /**
      *
      * @param contextKeyPartial PascalCased Context key name will be prefixed with ServiceName
@@ -34,9 +42,10 @@ export class FlicketSlackbotStack extends cdk.Stack {
     const getContext = (
       contextKeyPartial: `${Uppercase<string>}${string}`,
       defaultValue?: string,
-    ) =>
-      this.node.tryGetContext(`${SERVICE_NAME}_${contextKeyPartial}`) ??
-      defaultValue;
+    ): string =>
+      (this.node.tryGetContext(
+        `${SERVICE_NAME}_${contextKeyPartial}`,
+      ) as string) ?? defaultValue;
 
     const applicationPort = Number.parseInt(getContext("Port") ?? "8000");
 
@@ -47,6 +56,11 @@ export class FlicketSlackbotStack extends cdk.Stack {
     );
     const openRouterApiKey = new Secret(this, buildId("OpenRouterAPIKey"), {});
     const slackBotToken = new Secret(this, buildId("SlackBotToken"), {});
+    const snowflakeCortexAgentAuthPrivateKeySecret = new Secret(
+      this,
+      buildId("SnowflakePrivateKey"),
+      {},
+    );
 
     // Define a Docker image asset
     const dockerImageAsset = new DockerImageAsset(
@@ -100,6 +114,28 @@ export class FlicketSlackbotStack extends cdk.Stack {
             NODE_ENV: "production",
             DYNAMODB_TABLE_PREFIX: dynamoDbPrefix,
             PORT: `${applicationPort}`,
+            // These JWT values are not real - they are here to ensure the guard can secure teh endpoints making them inaccessible. WIP
+            JWT_SECRET: "your-jwt-secret-key-here",
+            JWT_EXPIRATION: "24h",
+            JWT_ISSUER: "your-app-name",
+            JWT_AUDIENCE: "your-app-audience",
+
+            // SnowflakeCortex Agent Stuff
+            AGENT_SNOWFLAKE_CORTEX_ENABLED: "true",
+            AGENT_SNOWFLAKE_CORTEX_ENDPOINT:
+              "https://FLICKET-AUS.snowflakecomputing.com",
+            AGENT_SNOWFLAKE_CORTEX_AUTH_PUBLIC_KEY_FINGERPRINT:
+              "Xyk82yEHVVwsRul5ZvPIiKseGokyqVLKaPIWWpcWjF8=",
+            AGENT_SNOWFLAKE_CORTEX_AUTH_ACCOUNT_IDENTIFIER: "FLICKET-AUS",
+            AGENT_SNOWFLAKE_CORTEX_AUTH_USER: "FLICKET_AGENT_PLATFORM_LOCAL",
+            AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_DATABASE: "POSTGRES_SOURCE",
+            AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_SCHEMA: "PUBLIC",
+            AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_WAREHOUSE: "COMPUTE_WH",
+            AGENT_SNOWFLAKE_CORTEX_SQL_MAX_EXECUTION_TIME_SECONDS: "60",
+
+            //Checkpoint splitting (WIP)
+            CHECKPOINT_SPLITTING_ENABLED: "true",
+            CHECKPOINT_SPLITTING_STRATEGY: "content_level",
           },
           environmentSecrets: {
             SLACK_SIGNING_SECRET:
@@ -107,6 +143,10 @@ export class FlicketSlackbotStack extends cdk.Stack {
             SLACK_BOT_TOKEN: AppRunnerSecret.fromSecretsManager(slackBotToken),
             LLM_OPENAI_KEY:
               AppRunnerSecret.fromSecretsManager(openRouterApiKey),
+            AGENT_SNOWFLAKE_CORTEX_AUTH_PRIVATE_KEY:
+              AppRunnerSecret.fromSecretsManager(
+                snowflakeCortexAgentAuthPrivateKeySecret,
+              ),
           },
         },
         asset: dockerImageAsset,

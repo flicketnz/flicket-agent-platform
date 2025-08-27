@@ -35,7 +35,7 @@ export class SlackFormatter {
       const blocks = (
         JSON.parse(vFileResult.value as string) as { blocks?: Block[] }
       ).blocks;
-      this.logger.debug("blocks", blocks);
+      // this.logger.debug("blocks", blocks);
 
       if (!blocks) {
         this.logger.debug({ vFileResult: vFileResult.value });

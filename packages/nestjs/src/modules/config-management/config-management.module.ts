@@ -4,6 +4,7 @@ import Joi from "joi";
 
 import agentSnowflakeCortexConfig from "./configs/agent-snowflake-cortex.config";
 import awsConfig from "./configs/aws.config";
+import checkpointSplittingConfig from "./configs/checkpoint-splitting.config";
 import jwtConfig from "./configs/jwt.config";
 import llmConfig from "./configs/llm.config";
 import llmOpenaiConfig from "./configs/llm-openai.config";
@@ -12,6 +13,7 @@ import llmToolsSlackConfig from "./configs/llm-tools-slack.config";
 import slackConfig from "./configs/slack.config";
 import { agentSnowflakeCortexSchema } from "./schemas/agent-snowflake-cortex.schema";
 import { awsValidationSchema } from "./schemas/aws.schema";
+import { checkpointSplittingValidationSchema } from "./schemas/checkpoint-splitting.schema";
 import { commonValidationSchema } from "./schemas/common.schema";
 import { jwtValidationSchema } from "./schemas/jwt.schema";
 import { llmValidationSchema } from "./schemas/llm.schema";
@@ -27,6 +29,7 @@ import { slackValidationSchema } from "./schemas/slack.schema";
       validationSchema: Joi.any()
         .concat(agentSnowflakeCortexSchema)
         .concat(awsValidationSchema)
+        .concat(checkpointSplittingValidationSchema)
         .concat(commonValidationSchema)
         .concat(jwtValidationSchema)
         .concat(llmValidationSchema)
@@ -41,6 +44,7 @@ import { slackValidationSchema } from "./schemas/slack.schema";
       load: [
         agentSnowflakeCortexConfig,
         awsConfig,
+        checkpointSplittingConfig,
         jwtConfig,
         llmConfig,
         llmOpenaiConfig,

@@ -1,3 +1,9 @@
+import {
+  ContentSplitData,
+  MessageSplitData,
+  SplitRecordMetadata,
+} from "../interfaces/checkpoint-splitting.interface";
+
 export interface CheckpointsKey {
   threadId: string;
   recordId: string; // This will be either checkpoint#{namespace}#{id} or write#{namespace}#{id}#{taskId}#{writeIdx}
@@ -15,4 +21,10 @@ export interface Checkpoints extends CheckpointsKey {
   channel?: string;
   value?: string;
   writeIdx?: number;
+
+  // Split-specific fields (only present for split records)
+  isSplit?: boolean;
+  splitMetadata?: SplitRecordMetadata;
+  messageSplitData?: MessageSplitData;
+  contentSplitData?: ContentSplitData;
 }

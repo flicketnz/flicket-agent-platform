@@ -12,12 +12,16 @@ import {
   PendingWrite,
   WRITES_IDX_MAP,
 } from "@langchain/langgraph-checkpoint";
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { type ConfigType } from "@nestjs/config";
 import { SortOrder } from "dynamoose/dist/General";
 import { InjectModel, Item, type Model } from "nestjs-dynamoose";
+import checkpointSplittingConfig from "src/modules/config-management/configs/checkpoint-splitting.config";
 
+import { ReassemblyOptions } from "./interfaces/checkpoint-splitting.interface";
 import type { CheckpointerPort } from "./ports/checkpointer.port";
 import { Checkpoints, CheckpointsKey } from "./schemas/checkpoints.interface";
+import { CheckpointSplittingService } from "./services/checkpoint-splitting.service";
 
 // Define TASKS constant locally if not available from imports
 const TASKS = "__pregel_tasks__";
@@ -34,6 +38,11 @@ export class DynamoDBCheckpointerAdapter
   constructor(
     @InjectModel("Checkpoints")
     private checkpointsModel: Model<Checkpoints, CheckpointsKey>,
+    @Inject(checkpointSplittingConfig.KEY)
+    private readonly splittingConfig: ConfigType<
+      typeof checkpointSplittingConfig
+    >,
+    private readonly splittingService: CheckpointSplittingService,
   ) {
     super();
   }
@@ -105,8 +114,8 @@ export class DynamoDBCheckpointerAdapter
   private _isStoredCheckpointData(item: Item<Checkpoints>) {
     return (
       item.recordId.startsWith("checkpoint#") &&
-      typeof item.checkpoint === "string" &&
-      typeof item.metadata === "string"
+      (typeof item.checkpoint === "string" || item.isSplit === true) &&
+      (typeof item.metadata === "string" || item.isSplit === true)
     );
   }
 
@@ -209,8 +218,8 @@ export class DynamoDBCheckpointerAdapter
       if (
         parentData &&
         parentData.recordId.startsWith("checkpoint#") &&
-        parentData.checkpoint &&
-        parentData.metadata
+        (parentData.checkpoint || parentData.isSplit) &&
+        (parentData.metadata || parentData.isSplit)
       ) {
         // Query for writes related to this parent checkpoint
         const writeRecordIdPrefix = `write#${checkpointNs}#${parentCheckpointId}#`;
@@ -316,10 +325,59 @@ export class DynamoDBCheckpointerAdapter
     checkpointNs: string,
     checkpointId: string,
   ): Promise<CheckpointTuple> {
-    const deserializedCheckpoint = (await this.serde.loadsTyped(
-      "json",
-      this._deserializeData(storedData.checkpoint!),
-    )) as Checkpoint<string, string>;
+    let deserializedCheckpoint: Checkpoint<string, string>;
+    let deserializedMetadata: CheckpointMetadata;
+
+    // Handle split records
+    if (storedData.isSplit) {
+      this.logger.debug(`Reassembling split checkpoint ${checkpointId}`);
+
+      const reassemblyOptions: ReassemblyOptions = {
+        validateChecksums: true,
+        timeout: this.splittingConfig.operationTimeout,
+        enableLogging: this.splittingConfig.enableSizeMonitoring,
+      };
+
+      const reassemblyResult = await this.splittingService.reassembleCheckpoint(
+        threadId,
+        storedData.recordId,
+        this.checkpointsModel,
+        reassemblyOptions,
+      );
+
+      if (!reassemblyResult.success || !reassemblyResult.data) {
+        throw new Error(
+          `Failed to reassemble split checkpoint: ${reassemblyResult.warnings.join(", ")}`,
+        );
+      }
+
+      deserializedCheckpoint = reassemblyResult.data.checkpoint;
+      deserializedMetadata = reassemblyResult.data.metadata;
+
+      if (this.splittingConfig.enableSizeMonitoring) {
+        this.logger.log(`Reassembled checkpoint ${checkpointId}`, {
+          partsReassembled: reassemblyResult.partsReassembled,
+          totalExpectedParts: reassemblyResult.totalExpectedParts,
+          reassemblyTime: reassemblyResult.reassemblyTime,
+          warnings: reassemblyResult.warnings,
+        });
+      }
+    } else {
+      // Handle regular records
+      if (!storedData.checkpoint || !storedData.metadata) {
+        throw new Error("Non-split checkpoint missing required data");
+      }
+
+      deserializedCheckpoint = (await this.serde.loadsTyped(
+        "json",
+        this._deserializeData(storedData.checkpoint),
+      )) as Checkpoint<string, string>;
+
+      deserializedMetadata = (await this.serde.loadsTyped(
+        "json",
+        this._deserializeData(storedData.metadata),
+      )) as CheckpointMetadata;
+    }
 
     // Get all writes for this checkpoint
     const writes = await this._getWrites(
@@ -348,10 +406,7 @@ export class DynamoDBCheckpointerAdapter
         },
       },
       checkpoint: deserializedCheckpoint,
-      metadata: (await this.serde.loadsTyped(
-        "json",
-        this._deserializeData(storedData.metadata!),
-      )) as CheckpointMetadata,
+      metadata: deserializedMetadata,
       pendingWrites: writes,
     };
 
@@ -396,7 +451,7 @@ export class DynamoDBCheckpointerAdapter
         // Build scan with available filter expressions
         let scanQuery = this.checkpointsModel.scan();
 
-        // Add filter for checkpoint records only
+        // Add filter for checkpoint records only (exclude split parts)
         scanQuery = scanQuery.filter("recordId").beginsWith("checkpoint#");
 
         // DynamoDB scan doesn't support complex filtering, so we still need some post-processing
@@ -408,6 +463,11 @@ export class DynamoDBCheckpointerAdapter
         for (const result of sortedResults) {
           if (limit !== undefined && processedCount >= limit) {
             return;
+          }
+
+          // Skip split parts in list operations
+          if (this._isSplitPart(result.recordId)) {
+            continue;
           }
 
           const parsed = this._parseCheckpointKey(result.recordId);
@@ -440,12 +500,37 @@ export class DynamoDBCheckpointerAdapter
             }
           }
 
-          // Apply metadata filter (requires deserialization)
+          // Apply metadata filter (requires deserialization, handle split records)
           if (filter) {
-            const metadata = (await this.serde.loadsTyped(
-              "json",
-              this._deserializeData(result.metadata!),
-            )) as CheckpointMetadata;
+            let metadata: CheckpointMetadata;
+
+            if (result.isSplit) {
+              const reassemblyResult =
+                await this.splittingService.reassembleCheckpoint(
+                  result.threadId,
+                  result.recordId,
+                  this.checkpointsModel,
+                  {
+                    validateChecksums: false,
+                    timeout: 5000,
+                    enableLogging: false,
+                  },
+                );
+
+              if (!reassemblyResult.success || !reassemblyResult.data) {
+                continue; // Skip if can't reassemble
+              }
+
+              metadata = reassemblyResult.data.metadata;
+            } else {
+              if (!result.metadata) {
+                continue;
+              }
+              metadata = (await this.serde.loadsTyped(
+                "json",
+                this._deserializeData(result.metadata),
+              )) as CheckpointMetadata;
+            }
 
             if (
               !Object.entries(filter).every(
@@ -485,8 +570,6 @@ export class DynamoDBCheckpointerAdapter
               checkpointPrefix = "checkpoint##";
             }
           }
-          // console.log("------------------> pk: ", threadIds);
-          // console.log("------------------> sortkey: ", checkpointPrefix);
 
           // Build query with DynamoDB-level sorting and filtering
           let query = this.checkpointsModel
@@ -506,22 +589,22 @@ export class DynamoDBCheckpointerAdapter
 
           const results = await query.exec();
 
-          // console.log("------------------> q results: ", results);
-          // returns 2 checkpoints
-
           for (const result of results) {
             if (limit !== undefined && processedCount >= limit) {
               return;
             }
-            // console.log("==============> Before isStored");
+
             if (!this._isStoredCheckpointData(result)) {
               continue;
             }
-            // console.log("==============> Before after");
+
+            // Skip split parts in list operations
+            if (this._isSplitPart(result.recordId)) {
+              continue;
+            }
 
             const parsed = this._parseCheckpointKey(result.recordId);
 
-            // console.log("==============> Before checkpointIdMatch");
             // Filter by specific checkpoint ID if provided
             if (
               configCheckpointId &&
@@ -529,9 +612,7 @@ export class DynamoDBCheckpointerAdapter
             ) {
               continue;
             }
-            // console.log("==============> after checkpointIdMatch");
 
-            // console.log("==============> before filter applied");
             // Apply before filter if specified
             if (before?.configurable?.checkpoint_id) {
               const beforeKey = this._generateCheckpointKey(
@@ -542,14 +623,38 @@ export class DynamoDBCheckpointerAdapter
                 continue;
               }
             }
-            // console.log("==============> after filter applied");
 
-            // Apply metadata filter (requires deserialization)
+            // Apply metadata filter (requires deserialization, handle split records)
             if (filter) {
-              const metadata = (await this.serde.loadsTyped(
-                "json",
-                this._deserializeData(result.metadata!),
-              )) as CheckpointMetadata;
+              let metadata: CheckpointMetadata;
+
+              if (result.isSplit) {
+                const reassemblyResult =
+                  await this.splittingService.reassembleCheckpoint(
+                    threadId,
+                    result.recordId,
+                    this.checkpointsModel,
+                    {
+                      validateChecksums: false,
+                      timeout: 5000,
+                      enableLogging: false,
+                    },
+                  );
+
+                if (!reassemblyResult.success || !reassemblyResult.data) {
+                  continue; // Skip if can't reassemble
+                }
+
+                metadata = reassemblyResult.data.metadata;
+              } else {
+                if (!result.metadata) {
+                  continue;
+                }
+                metadata = (await this.serde.loadsTyped(
+                  "json",
+                  this._deserializeData(result.metadata),
+                )) as CheckpointMetadata;
+              }
 
               if (
                 !Object.entries(filter).every(
@@ -580,6 +685,16 @@ export class DynamoDBCheckpointerAdapter
         }
       }
     }
+  }
+
+  /**
+   * Checks if a record ID represents a split part (should be excluded from list operations)
+   */
+  private _isSplitPart(recordId: string): boolean {
+    return (
+      recordId.includes(`${this.splittingConfig.splitRecordPrefix}#`) &&
+      recordId.includes("#part#")
+    );
   }
 
   /**
@@ -641,16 +756,44 @@ export class DynamoDBCheckpointerAdapter
         modifiedCheckpoint.channel_values = {};
       }
 
+      const recordId = this._generateCheckpointKey(
+        checkpointNamespace,
+        checkpoint.id,
+      );
+
+      // Check if splitting is needed and handle accordingly
+      if (this.splittingConfig.enabled) {
+        const splitResult = await this.splittingService.splitCheckpointIfNeeded(
+          threadId,
+          recordId,
+          modifiedCheckpoint,
+          metadata,
+          this.checkpointsModel,
+        );
+
+        if (splitResult.wasSplit) {
+          this.logger.log(
+            `Checkpoint ${checkpoint.id} was split into ${splitResult.recordIds.length} parts`,
+          );
+          this.logger.debug("Put operation complete");
+
+          // Return the primary record ID for compatibility
+          return {
+            configurable: {
+              thread_id: threadId,
+              checkpoint_ns: checkpointNamespace,
+              checkpoint_id: checkpoint.id,
+            },
+          };
+        }
+      }
+
+      // Handle normal (non-split) checkpoint storage
       const [[, serializedCheckpoint], [, serializedMetadata]] =
         await Promise.all([
           this.serde.dumpsTyped(modifiedCheckpoint),
           this.serde.dumpsTyped(metadata),
         ]);
-
-      const recordId = this._generateCheckpointKey(
-        checkpointNamespace,
-        checkpoint.id,
-      );
 
       await this.checkpointsModel.create({
         threadId,
@@ -743,7 +886,7 @@ export class DynamoDBCheckpointerAdapter
   async deleteThread(threadId: string): Promise<void> {
     this.logger.verbose("Starting DeleteThread operation");
     try {
-      // Delete all records for this thread (both checkpoints and writes)
+      // Delete all records for this thread (including split parts)
       const results = await this.checkpointsModel.query({ threadId }).exec();
 
       await Promise.all(

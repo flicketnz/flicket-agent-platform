@@ -2,5 +2,6 @@
   "acknowledged-issue-numbers": [
     34892,
     32775
-  ]
+  ],
+  "FlicketAgentPlatform_ImageBuildPlatform":"linux/arm64"
 }
