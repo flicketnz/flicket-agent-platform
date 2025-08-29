@@ -6,7 +6,7 @@ import {
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SlackService } from "nestjs-slack-bolt/dist/services/slack.service";
-import { z } from "zod";
+import * as z from "zod/v3";
 
 import { type AiToolProvider, Tool } from "./ai-tools";
 

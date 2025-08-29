@@ -1,19 +1,18 @@
 import { resolve } from "node:path";
+
 import {
   Cpu,
-  HealthCheckProtocolType,
   Memory,
+  Secret as AppRunnerSecret,
   Service,
   Source,
-  Secret as AppRunnerSecret,
 } from "@aws-cdk/aws-apprunner-alpha";
 import * as cdk from "aws-cdk-lib";
+import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 import { DockerImageAsset } from "aws-cdk-lib/aws-ecr-assets";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { CfnContainer } from "aws-cdk-lib/aws-lightsail";
-import type { Construct } from "constructs";
-import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
+import type { Construct } from "constructs";
 
 const SERVICE_NAME = `FlicketAgentPlatform`;
 /**
@@ -54,7 +53,8 @@ export class FlicketSlackbotStack extends cdk.Stack {
       this,
       buildId("NestJsImage"),
       {
-        directory: resolve("..", "nestjs"), // Path to the directory containing the Dockerfile
+        directory: resolve("..", ".."), // Path to the directory containing the Dockerfile
+        file: "packages/nestjs/Dockerfile",
         cacheFrom: [
           {
             type: "local",

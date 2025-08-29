@@ -33,6 +33,7 @@
     "@nestjs/platform-express": "11.1.5",
     "@nestjs/terminus": "11.0.0",
     "@slack/bolt": "^4.4.0",
+    "@types/node": "^24.3.0",
     "joi": "^18.0.0",
     "langchain": "^0.3.30",
     "nestjs-dynamoose": "^0.6.0",

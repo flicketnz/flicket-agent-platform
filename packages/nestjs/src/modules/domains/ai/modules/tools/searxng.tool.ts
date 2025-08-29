@@ -1,7 +1,7 @@
 import { SearxngSearch } from "@langchain/community/tools/searxng_search";
+import type { Tool as BaseTool } from "@langchain/core/tools";
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Tool as BaseTool } from "langchain/tools";
 
 import { type AiToolProvider, Tool } from "./ai-tools";
 

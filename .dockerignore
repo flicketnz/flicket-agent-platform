@@ -1,0 +1,36 @@
+# strange situation where we need to build the container defined by packages/nestjs/Dockerfile from the repo root. there are some shared dependencies that exist at this level (tsconfig)
+# originally had this working with multiple build contexts to keep it clean, but that failed as cdk doesn't support building a container with multiple build contexts
+
+
+# ignore everything
+* 
+
+# except these things
+!packages/nestjs/
+!tsconfig.json
+!package*.json
+
+
+# and the normal/generic stuff to reduce risk in the build context
+node_modules
+npm-debug.log
+yarn-error.log
+dist
+build
+.env
+.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+coverage
+*.tgz
+*.swp
+*.swo
+*.log
+*.pid
+tmp
+.cache
+test
+__tests__
+__mocks__
