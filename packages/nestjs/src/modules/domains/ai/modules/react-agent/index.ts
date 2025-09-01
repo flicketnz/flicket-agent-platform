@@ -7,13 +7,7 @@
  */
 
 // Export the main module
-export { AgentsModule } from "./agents.module";
+export { ReactAgentModule } from "./react-agent.module";
 
-// Export key services for external use
-export { AgentRegistryService } from "./services";
-
-// Export ports and interfaces
-export * from "./ports";
-
-// Export decorators for agent registration
-export * from "./decorators";
+// Agent Adaters
+export * from "./adapters/index";

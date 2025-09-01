@@ -49,17 +49,21 @@ export class FlicketSlackbotStack extends cdk.Stack {
 
     const applicationPort = Number.parseInt(getContext("Port") ?? "8000");
 
-    const slackSigningSecret = new Secret(
-      this,
-      buildId("SlackSigningSecret"),
-      {},
-    );
-    const openRouterApiKey = new Secret(this, buildId("OpenRouterAPIKey"), {});
-    const slackBotToken = new Secret(this, buildId("SlackBotToken"), {});
+    const slackSigningSecret = new Secret(this, buildId("SlackSigningSecret"), {
+      description: `Slack Signing secret. To validate incoming payloads form slack`,
+    });
+    const openRouterApiKey = new Secret(this, buildId("OpenRouterAPIKey"), {
+      description: `API Key for ${SERVICE_NAME} to access OpenRouter`,
+    });
+    const slackBotToken = new Secret(this, buildId("SlackBotToken"), {
+      description: `Slack bot token. Used to authenticate bot actions.`,
+    });
     const snowflakeCortexAgentAuthPrivateKeySecret = new Secret(
       this,
       buildId("SnowflakePrivateKey"),
-      {},
+      {
+        description: `Private key for ${SERVICE_NAME} service account on snowflake. Used to sign JWT's for snowflake api requests`,
+      },
     );
 
     // Define a Docker image asset
@@ -69,6 +73,10 @@ export class FlicketSlackbotStack extends cdk.Stack {
       {
         directory: resolve("..", ".."), // Path to the directory containing the Dockerfile
         file: "packages/nestjs/Dockerfile",
+        // HACK
+        // The following line causes all docker build hashing to be null - and will build the container for every deploy.
+        // Its required because the hashing is failing due to our complex directory structure requirements.
+        extraHash: new Date().toISOString(),
         cacheFrom: [
           {
             type: "local",
@@ -101,6 +109,7 @@ export class FlicketSlackbotStack extends cdk.Stack {
     const appRunnerAgentPlatform = new Service(this, "FlicketAgentPlatform", {
       cpu: Cpu.QUARTER_VCPU,
       memory: Memory.HALF_GB,
+
       source: Source.fromAsset({
         imageConfiguration: {
           port: applicationPort,
@@ -109,13 +118,13 @@ export class FlicketSlackbotStack extends cdk.Stack {
             LLM_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
             LLM_OPENAI_MODEL: "anthropic/claude-3.5-haiku",
             LLM_TOOLS_SEARXNG_ENABLED: "true",
-            LLM_TOOLS_SEARXNG_API_BASE: "https://search.canine.tools/",
+            LLM_TOOLS_SEARXNG_API_BASE: "https://searx.namejeff.xyz/",
             LLM_TOOLS_SLACK_ENABLED: "true",
             NODE_ENV: "production",
             DYNAMODB_TABLE_PREFIX: dynamoDbPrefix,
             PORT: `${applicationPort}`,
-            // These JWT values are not real - they are here to ensure the guard can secure teh endpoints making them inaccessible. WIP
-            JWT_SECRET: "your-jwt-secret-key-here",
+            // These JWT values are not real - they are here to ensure the guard can secure the endpoints making them inaccessible. WIP
+            JWT_SECRET: "your-jwt-secret-key-here2",
             JWT_EXPIRATION: "24h",
             JWT_ISSUER: "your-app-name",
             JWT_AUDIENCE: "your-app-audience",
@@ -125,9 +134,10 @@ export class FlicketSlackbotStack extends cdk.Stack {
             AGENT_SNOWFLAKE_CORTEX_ENDPOINT:
               "https://FLICKET-AUS.snowflakecomputing.com",
             AGENT_SNOWFLAKE_CORTEX_AUTH_PUBLIC_KEY_FINGERPRINT:
-              "Xyk82yEHVVwsRul5ZvPIiKseGokyqVLKaPIWWpcWjF8=",
+              "X7Ptw2V7KkkvfPyjF0uHsLBcjYkqug5UIdPzdHMmKvU=",
             AGENT_SNOWFLAKE_CORTEX_AUTH_ACCOUNT_IDENTIFIER: "FLICKET-AUS",
-            AGENT_SNOWFLAKE_CORTEX_AUTH_USER: "FLICKET_AGENT_PLATFORM_LOCAL",
+            AGENT_SNOWFLAKE_CORTEX_AUTH_USER:
+              "FLICKET_AGENT_PLATFORM_STAGING_SVC_USER",
             AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_DATABASE: "POSTGRES_SOURCE",
             AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_SCHEMA: "PUBLIC",
             AGENT_SNOWFLAKE_CORTEX_SQL_DEFAULT_WAREHOUSE: "COMPUTE_WH",

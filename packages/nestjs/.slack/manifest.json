@@ -4,7 +4,8 @@
     "minor_version": 1
   },
   "display_information": {
-    "name": "Flicket AI"
+    "name": "Flicket AI",
+    "icon": "assets/avatar.png"
   },
   "features": {
     "app_home": {

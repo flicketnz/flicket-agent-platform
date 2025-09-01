@@ -1,15 +1,12 @@
-import { HttpModule } from "@nestjs/axios";
 import { Module } from "@nestjs/common";
 import { DiscoveryModule } from "@nestjs/core";
 
-import { LlmStorageModule } from "../llm-storage/llm-storage.module";
-import { LangGraphReactAgentAdapter } from "./adapters";
 import { AgentRegistryService } from "./services";
 
 @Module({
-  imports: [HttpModule, DiscoveryModule, LlmStorageModule],
+  imports: [DiscoveryModule],
 
-  providers: [LangGraphReactAgentAdapter, AgentRegistryService],
-  exports: [AgentRegistryService, LangGraphReactAgentAdapter],
+  providers: [AgentRegistryService],
+  exports: [AgentRegistryService],
 })
 export class AgentsModule {}

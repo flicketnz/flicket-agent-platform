@@ -1,5 +1,7 @@
 import "@langchain/langgraph/zod";
 
+import { randomUUID } from "node:crypto";
+
 import {
   AIMessage,
   BaseMessage,
@@ -670,6 +672,48 @@ ${sqlResults.formattedResults.tableFormat}
       )
         return true;
     });
+  }
+
+  public async healthcheck() {
+    const state = (await this.getGraph().invoke(
+      {
+        messages: [
+          new HumanMessage(
+            "Retreive all the organisations tha include 'flicket' in there name ",
+          ),
+        ],
+      },
+      {
+        configurable: {
+          thread_id: `health-${randomUUID()}`,
+        },
+      },
+    )) as {
+      messages: BaseMessage[];
+      sqlResults?: { data: [string, string, string, string][] };
+    };
+    this.logger.debug(state);
+
+    const aiMessage = state.messages[state.messages.length - 1] as AIMessage;
+    const content = aiMessage.content as unknown as string;
+
+    let status: { status: "down" | "up" } = { status: "down" };
+
+    if (state.sqlResults && state.sqlResults.data) {
+      if (
+        // check the list of results contains the org name and ord ID of our flicket org (these values should never change)
+        state.sqlResults.data.some(
+          (record) =>
+            record[0] === "3da5f0cc-8004-4674-bf2b-e0743cd3f89c" &&
+            record[1] === "Flicket Ltd",
+        )
+      ) {
+        status = { status: "up" };
+      }
+    }
+    this.logger.log(status);
+
+    return status;
   }
 }
 

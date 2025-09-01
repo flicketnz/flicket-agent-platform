@@ -1,3 +1,8 @@
+#
+# IMPORTANT: This container expects to be build from the repo root
+#
+
+
 ARG NODE_VERSION="24"
 ARG ALPINE_VERSION="3.21"
 
@@ -40,6 +45,7 @@ RUN --mount=type=cache,target=/npm-cache \
 RUN \
     --mount=type=bind,source=tsconfig.json,target=/app/tsconfig.json \
     --mount=type=bind,source=packages/nestjs/package.json,target=/app/packages/nestjs/package.json \
+    --mount=type=bind,source=packages/nestjs/tsconfig.build.json,target=/app/packages/nestjs/tsconfig.build.json \
     --mount=type=bind,source=packages/nestjs/tsconfig.json,target=/app/packages/nestjs/tsconfig.json \
     --mount=type=bind,source=packages/nestjs/nest-cli.json,target=/app/packages/nestjs/nest-cli.json \
     npm run build

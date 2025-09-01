@@ -17,7 +17,7 @@ export class SnowflakeJwtService {
 
     const jwt = this.jwtService.sign({});
 
-    this.logger.debug("Produced signed jwt", jwt);
+    this.logger.debug("Produced signed jwt");
 
     this.jwt = jwt;
     return this.jwt;

@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StructuredToolInterface } from "@langchain/core/tools";
 import { Annotation } from "@langchain/langgraph";
@@ -12,47 +14,37 @@ import { Injectable, Logger } from "@nestjs/common";
 import { DiscoveryService } from "@nestjs/core";
 import { Prompt } from "node_modules/@langchain/langgraph/dist/prebuilt/react_agent_executor";
 
-import {
-  type CheckpointerPort,
-  InjectCheckpointer,
-} from "../../llm-storage/ports/checkpointer.port";
+import { Agent } from "../../agents/decorators/agent.decorator";
+import { GraphAgentPort } from "../../agents/ports/graph-agent.port";
 import {
   InjectPrimaryChatModel,
   type PrimaryChatModelPort,
 } from "../../model-providers/ports/primary-model.port";
 import { AiToolProvider, Tool } from "../../tools/ai-tools";
-import { Agent } from "../decorators/agent.decorator";
-import { GraphAgentPort } from "../ports/graph-agent.port";
 
 @Agent({
-  agentId: "langgraph-react",
+  agentId: "react-agent",
   capabilities: ["general-reasoning", "tool-usage", "conversation"],
   isPrimary: true,
 })
 @Injectable()
-export class LangGraphReactAgentAdapter extends GraphAgentPort {
-  private readonly logger = new Logger(LangGraphReactAgentAdapter.name);
+export class ReactAgentAdapter extends GraphAgentPort {
+  private readonly logger = new Logger(ReactAgentAdapter.name);
   private defaultTools: StructuredToolInterface[] | undefined;
   private prompts: {
     systemPrompt: string;
   };
 
-  readonly agentId = "langgraph-react";
+  readonly agentId = "react-agent";
   protected graph: ReturnType<typeof createReactAgent> | undefined;
 
   public readonly stateDefinition = Annotation.Root({
-    // ...MessagesAnnotation.spec,
     ...createReactAgentAnnotation().spec,
-    // humanName: Annotation<string>(),
-    // currentDateIso: Annotation<string>(),
-    // currentTimezone: Annotation<string>(),
-    // systemPrompt: Annotation<string>(),
   });
 
   constructor(
     @InjectPrimaryChatModel() private primaryChatModel: PrimaryChatModelPort,
     private discoveryService: DiscoveryService,
-    @InjectCheckpointer() private checkpointerAdapter: CheckpointerPort,
   ) {
     super();
     this.prompts = {
@@ -68,7 +60,7 @@ export class LangGraphReactAgentAdapter extends GraphAgentPort {
       return this.defaultTools;
     }
     // Discover and register tools
-    // TODO: refine this to only get tools providers that are in scope of this module. currently gets providers from across the system
+
     const toolsAndToolkits = this.discoveryService
       .getProviders({ metadataKey: Tool.KEY })
       // get the tools from the providers
@@ -140,5 +132,29 @@ export class LangGraphReactAgentAdapter extends GraphAgentPort {
     );
 
     return this.graph;
+  }
+
+  public async healthcheck() {
+    const state = (await this.getGraph().invoke(
+      {
+        messages: [
+          new HumanMessage(
+            'This is a health check - response with exactly `{"status": "ok"} and nothing else',
+          ),
+        ],
+      },
+      {
+        configurable: {
+          thread_id: `health-${randomUUID()}`,
+        },
+      },
+    )) as { messages: BaseMessage[] };
+
+    const aiMessage = state.messages[state.messages.length - 1] as AIMessage;
+    const content = aiMessage.content as unknown as string;
+    const status = JSON.parse(content) as { status: "up" };
+    this.logger.log(status);
+
+    return status;
   }
 }

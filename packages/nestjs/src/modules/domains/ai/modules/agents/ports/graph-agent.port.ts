@@ -113,4 +113,12 @@ export abstract class GraphAgentPort {
 
   // TODO: we could define some of our state here (in the CompiledStateGraph type) that we expect to be common
   public abstract getGraph(): Exclude<typeof this.graph, undefined>;
+
+  public abstract healthcheck():
+    | HealthCheckReturnType
+    | Promise<HealthCheckReturnType>;
 }
+type HealthCheckReturnType = {
+  status: "up" | "down";
+  additionalData?: Record<string, unknown>;
+};
