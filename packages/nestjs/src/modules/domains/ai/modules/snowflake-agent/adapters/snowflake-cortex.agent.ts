@@ -272,8 +272,10 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
       const requestPayload: SnowflakeCortexRequest = {
         //model: "claude-3-7-sonnet", //todo make this configurable... somehow. potentially by caller
         messages: cortexMessages,
-        semantic_model_file:
-          "@POSTGRES_SOURCE.NZ.SEMANTIC_MODEL_REVENUE_MODEL_STAGE/revenue.yaml", // TODO make configureable from config,
+        semantic_models: [
+          { semantic_view: "FLICKET_PROD.DATA.AUDIENCE" },
+          { semantic_view: "FLICKET_PROD.DATA.REVENUE" },
+        ],
       };
 
       this.logger.debug(

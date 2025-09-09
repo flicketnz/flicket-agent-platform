@@ -136,6 +136,40 @@ you MAY NOT use any heading syntax`,
                   ? messageContent.image_url
                   : (messageContent.image_url as { url: string }).url,
             });
+          } else if (messageContent.type === "suggestions") {
+            if (
+              messageContent.suggestions &&
+              Array.isArray(messageContent.suggestions) &&
+              messageContent.suggestions.length >= 1
+            ) {
+              await this.slackService.client.assistant.threads.setSuggestedPrompts(
+                {
+                  channel_id: channelId,
+                  thread_ts: threadTs!,
+                  prompts: (messageContent.suggestions as string[]).map(
+                    (suggestion: string) => {
+                      return {
+                        title: suggestion,
+                        message: suggestion,
+                      };
+                    },
+                  ) as [
+                    { title: string; message: string },
+                    ...{ title: string; message: string }[],
+                  ],
+                },
+              );
+            }
+          } else if (messageContent.type === "sql") {
+            sayArgs.blocks.push(
+              ...(await this.slackFormatter.parse(
+                "\n" +
+                  "```sql\n" +
+                  (messageContent.statement as string) +
+                  "\n" +
+                  "```\n",
+              )),
+            );
           }
         }
 
