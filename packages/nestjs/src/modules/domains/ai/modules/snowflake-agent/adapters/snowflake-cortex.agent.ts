@@ -25,7 +25,7 @@ import { ConversationSession } from "src/common/types/conversation-session.type"
 import { normalizeMessage } from "src/common/utils/message.utils";
 import agentSnowflakeCortexConfig from "src/modules/config-management/configs/agent-snowflake-cortex.config";
 
-import { Agent, GraphAgentPort } from "../../agents";
+import { Agent, GraphAgentPort } from "../../agent-services";
 import { SnowflakeJwtService } from "../services/snowflake-jwt.service";
 import {
   SnowflakeSQLService,

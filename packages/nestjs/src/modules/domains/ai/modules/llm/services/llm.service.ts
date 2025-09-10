@@ -2,7 +2,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConversationSession } from "src/common/types/conversation-session.type";
 
-import { AgentInvocationInput } from "../../agents/ports";
+import { AgentInvocationInput } from "../../agent-services/ports";
 import { GraphOrchestratorService } from "../../orchestration";
 
 @Injectable()

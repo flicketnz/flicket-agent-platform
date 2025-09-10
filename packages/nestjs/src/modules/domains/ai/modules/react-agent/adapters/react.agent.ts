@@ -14,8 +14,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { DiscoveryService } from "@nestjs/core";
 import { Prompt } from "node_modules/@langchain/langgraph/dist/prebuilt/react_agent_executor";
 
-import { Agent } from "../../agents/decorators/agent.decorator";
-import { GraphAgentPort } from "../../agents/ports/graph-agent.port";
+import { Agent } from "../../agent-services/decorators/agent.decorator";
+import { GraphAgentPort } from "../../agent-services/ports/graph-agent.port";
 import {
   InjectPrimaryChatModel,
   type PrimaryChatModelPort,

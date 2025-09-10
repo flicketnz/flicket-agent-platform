@@ -19,7 +19,7 @@ import {
   AgentInvocationInput,
   AgentInvocationResult,
   AgentRegistryService,
-} from "../../agents";
+} from "../../agent-services";
 import {
   type CheckpointerPort,
   InjectCheckpointer,

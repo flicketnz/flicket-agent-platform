@@ -19,7 +19,10 @@ import { ConversationSession } from "src/common/types/conversation-session.type"
 import { JwtAuthGuard } from "src/modules/auth/guards/jwt-auth.guard";
 import type { AuthenticatedRequest } from "src/modules/auth/types/auth.types";
 
-import { AgentInvocationInput, AgentInvocationResult } from "../../agents";
+import {
+  AgentInvocationInput,
+  AgentInvocationResult,
+} from "../../agent-services";
 import { SnowflakeCortexAgentAdapter } from "../adapters/snowflake-cortex.agent";
 import type {
   ChatMessageDto,

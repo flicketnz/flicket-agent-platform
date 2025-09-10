@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 
-import { AgentsModule } from "../agents/agents.module";
+import { AgentServicesModule } from "../agent-services/agent-services.module";
 import { LlmStorageModule } from "../llm-storage/llm-storage.module";
 import { ModelProviderModule } from "../model-providers/model-provider.module";
 import { ReactAgentModule } from "../react-agent";
@@ -9,7 +9,7 @@ import { GraphOrchestratorService } from "./services";
 
 @Module({
   imports: [
-    AgentsModule,
+    AgentServicesModule,
     ModelProviderModule,
     SnowflakeCortexModule,
     ReactAgentModule,

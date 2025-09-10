@@ -18,7 +18,7 @@ import {
   AgentInvocationInput,
   AgentRegistryService,
   GraphAgentPort,
-} from "../../../agents";
+} from "../../../agent-services";
 import { CheckpointerPort } from "../../../llm-storage/ports/checkpointer.port";
 import type { PrimaryChatModelPort } from "../../../model-providers/ports/primary-model.port";
 import {

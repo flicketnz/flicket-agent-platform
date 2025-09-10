@@ -7,7 +7,7 @@
  */
 
 // Export the main module
-export { AgentsModule } from "./agents.module";
+export { AgentServicesModule } from "./agent-services.module";
 
 // Export key services for external use
 export { AgentRegistryService } from "./services";

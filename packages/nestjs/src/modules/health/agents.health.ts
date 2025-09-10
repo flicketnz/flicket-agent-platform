@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { HealthIndicatorService } from "@nestjs/terminus";
 
-import { AgentRegistryService } from "../domains/ai/modules/agents";
+import { AgentRegistryService } from "../domains/ai/modules/agent-services";
 
 @Injectable()
 export class AgentsIndicator {
