@@ -4,7 +4,7 @@ import { AgentsModule } from "../agents/agents.module";
 import { LlmStorageModule } from "../llm-storage/llm-storage.module";
 import { ModelProviderModule } from "../model-providers/model-provider.module";
 import { ReactAgentModule } from "../react-agent";
-import { SnowflakeCortexModule } from "../snowflake-agent/snowflake-cortex.module";
+import { SnowflakeCortexModule } from "../snowflake-agent/snowflake-agent.module";
 import { GraphOrchestratorService } from "./services";
 
 @Module({
