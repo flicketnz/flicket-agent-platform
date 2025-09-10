@@ -6,4 +6,5 @@ export enum NodeEnv {
 
 export enum LLM_Provider {
   OPENAI = "openai",
+  BEDROCK_CONVERSE = "bedrock_converse",
 }

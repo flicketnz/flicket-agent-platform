@@ -7,6 +7,7 @@ import awsConfig from "./configs/aws.config";
 import checkpointSplittingConfig from "./configs/checkpoint-splitting.config";
 import jwtConfig from "./configs/jwt.config";
 import llmConfig from "./configs/llm.config";
+import llmBedrockConverseConfig from "./configs/llm-bedrock-converse.config";
 import llmOpenaiConfig from "./configs/llm-openai.config";
 import llmToolsSearxngConfig from "./configs/llm-tools-searxng.config";
 import llmToolsSlackConfig from "./configs/llm-tools-slack.config";
@@ -17,6 +18,7 @@ import { checkpointSplittingValidationSchema } from "./schemas/checkpoint-splitt
 import { commonValidationSchema } from "./schemas/common.schema";
 import { jwtValidationSchema } from "./schemas/jwt.schema";
 import { llmValidationSchema } from "./schemas/llm.schema";
+import { llmBedrockConverseValidationSchema } from "./schemas/llm-bedrock-converse.schema";
 import { llmOpenAiValidationSchema } from "./schemas/llm-openai.schema";
 import { llmToolsSearxngValidationSchema } from "./schemas/llm-tools-searxng.schema";
 import { llmToolsSlackValidationSchema } from "./schemas/llm-tools-slack.schema";
@@ -34,6 +36,7 @@ import { slackValidationSchema } from "./schemas/slack.schema";
         .concat(jwtValidationSchema)
         .concat(llmValidationSchema)
         .concat(llmOpenAiValidationSchema)
+        .concat(llmBedrockConverseValidationSchema)
         .concat(llmToolsSearxngValidationSchema)
         .concat(llmToolsSlackValidationSchema)
         .concat(slackValidationSchema),
@@ -48,6 +51,7 @@ import { slackValidationSchema } from "./schemas/slack.schema";
         jwtConfig,
         llmConfig,
         llmOpenaiConfig,
+        llmBedrockConverseConfig,
         llmToolsSearxngConfig,
         llmToolsSlackConfig,
         slackConfig,
