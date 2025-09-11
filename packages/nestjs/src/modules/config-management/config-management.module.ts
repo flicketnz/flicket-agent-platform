@@ -1,6 +1,5 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
-import Joi from "joi";
 
 import agentSnowflakeCortexConfig from "./configs/agent-snowflake-cortex.config";
 import awsConfig from "./configs/aws.config";
@@ -12,6 +11,7 @@ import llmOpenaiConfig from "./configs/llm-openai.config";
 import llmToolsSearxngConfig from "./configs/llm-tools-searxng.config";
 import llmToolsSlackConfig from "./configs/llm-tools-slack.config";
 import slackConfig from "./configs/slack.config";
+import snowflakeConfig from "./configs/snowflake.config";
 import { agentSnowflakeCortexSchema } from "./schemas/agent-snowflake-cortex.schema";
 import { awsValidationSchema } from "./schemas/aws.schema";
 import { checkpointSplittingValidationSchema } from "./schemas/checkpoint-splitting.schema";
@@ -23,13 +23,13 @@ import { llmOpenAiValidationSchema } from "./schemas/llm-openai.schema";
 import { llmToolsSearxngValidationSchema } from "./schemas/llm-tools-searxng.schema";
 import { llmToolsSlackValidationSchema } from "./schemas/llm-tools-slack.schema";
 import { slackValidationSchema } from "./schemas/slack.schema";
+import { snowflakeSchema } from "./schemas/snowflake.schema";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       expandVariables: true,
-      validationSchema: Joi.any()
-        .concat(agentSnowflakeCortexSchema)
+      validationSchema: agentSnowflakeCortexSchema
         .concat(awsValidationSchema)
         .concat(checkpointSplittingValidationSchema)
         .concat(commonValidationSchema)
@@ -39,7 +39,8 @@ import { slackValidationSchema } from "./schemas/slack.schema";
         .concat(llmBedrockConverseValidationSchema)
         .concat(llmToolsSearxngValidationSchema)
         .concat(llmToolsSlackValidationSchema)
-        .concat(slackValidationSchema),
+        .concat(slackValidationSchema)
+        .concat(snowflakeSchema),
       validationOptions: {
         allowUnknown: true,
         abortEarly: false,
@@ -55,6 +56,7 @@ import { slackValidationSchema } from "./schemas/slack.schema";
         llmToolsSearxngConfig,
         llmToolsSlackConfig,
         slackConfig,
+        snowflakeConfig,
       ],
     }),
   ],

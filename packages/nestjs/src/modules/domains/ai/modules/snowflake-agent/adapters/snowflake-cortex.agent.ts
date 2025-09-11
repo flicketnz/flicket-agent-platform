@@ -18,20 +18,18 @@ import {
 } from "@langchain/langgraph";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { ConfigType } from "@nestjs/config";
 import { isAxiosError } from "@nestjs/terminus/dist/utils";
 import { firstValueFrom, timeout } from "rxjs";
 import { ConversationSession } from "src/common/types/conversation-session.type";
 import { normalizeMessage } from "src/common/utils/message.utils";
-import agentSnowflakeCortexConfig from "src/modules/config-management/configs/agent-snowflake-cortex.config";
-
-import { Agent, GraphAgentPort } from "../../agent-services";
-import { SnowflakeJwtService } from "../services/snowflake-jwt.service";
 import {
-  SnowflakeSQLService,
+  SNOWFLAKE_HTTP,
+  SnowflakeService,
   SQLExecutionResult,
   TenantContext,
-} from "../services/snowflake-sql.service";
+} from "src/modules/snowflake-utils";
+
+import { Agent, GraphAgentPort } from "../../agent-services";
 
 /**
  * Interface for Snowflake Cortex API request format
@@ -187,32 +185,11 @@ export class SnowflakeCortexAgentAdapter extends GraphAgentPort {
   });
 
   constructor(
-    private readonly httpService: HttpService,
-    private jwtService: SnowflakeJwtService,
-    private readonly sqlService: SnowflakeSQLService,
-    @Inject(agentSnowflakeCortexConfig.KEY)
-    private readonly config: ConfigType<typeof agentSnowflakeCortexConfig>,
+    @Inject(SNOWFLAKE_HTTP) private readonly httpService: HttpService,
+
+    private readonly sqlService: SnowflakeService,
   ) {
     super();
-    // Set auth via an interceptor so the token is updated on every call (if required)
-    httpService.axiosRef.interceptors.request.use(
-      (config) => {
-        const token = this.jwtService.getJwt();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-          config.headers["X-Snowflake-Authorization-Token-Type"] =
-            "KEYPAIR_JWT";
-        }
-        return config;
-      },
-      (error) => {
-        if (error instanceof Error) {
-          return Promise.reject(error);
-        } else {
-          return Promise.reject(new Error(error));
-        }
-      },
-    );
   }
 
   getGraph() {
