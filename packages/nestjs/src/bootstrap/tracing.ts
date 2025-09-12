@@ -29,14 +29,7 @@ const otelSDK = new NodeSDK({
   }),
   spanProcessors: [new BatchSpanProcessor(traceExporter)],
   contextManager: new AsyncLocalStorageContextManager(),
-  // textMapPropagator: new CompositePropagator({
-  //   propagators: [
-  //     new JaegerPropagator(),
-  //     new W3CTraceContextPropagator(),
-  //     new W3CBaggagePropagator(),
-  //     new B3Propagator(),
-  //   ],
-  // }),
+
   instrumentations: [
     getNodeAutoInstrumentations(),
     openAIInstrumentation,
